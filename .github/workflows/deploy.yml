@@ -39,23 +39,32 @@ jobs:
         HOSTNAME: ${{ secrets.EC2_HOST }}
         USER_NAME: ec2-user
       run: |
-        echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
+        # Setup SSH
+        mkdir -p ~/.ssh
+        echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $HOSTNAME >> ~/.ssh/known_hosts
         
-        # Create deployment package
-        tar --exclude='node_modules' --exclude='.git' --exclude='private_key' -czf deployment.tar.gz .
+        # Create deployment package in a clean way
+        mkdir -p deployment_temp
+        rsync -av --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='deployment_temp' ./ deployment_temp/
+        cd deployment_temp
+        tar -czf ../deployment.tar.gz .
+        cd ..
+        rm -rf deployment_temp
         
         # Copy files to server
-        scp -o StrictHostKeyChecking=no -i private_key deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
+        scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
         
         # Deploy on server
-        ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOSTNAME} '
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} '
           # Setup environment if not already done
           if ! command -v node &> /dev/null; then
             sudo yum update -y
             curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
             sudo yum install -y nodejs
             sudo npm install -g pm2
-            sudo amazon-linux-extras install nginx1 -y
+            sudo amazon-linux-extras install nginx1 -y || sudo yum install -y nginx
             sudo systemctl start nginx
             sudo systemctl enable nginx
             sudo mkdir -p /opt/lyra-beauty
@@ -107,7 +116,9 @@ jobs:
         '
         
     - name: Cleanup
-      run: rm -f private_key
+      run: |
+        rm -f deployment.tar.gz
+        rm -f ~/.ssh/id_rsa
       
     - name: Deployment Status
       run: |
