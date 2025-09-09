@@ -39,53 +39,108 @@ jobs:
         HOSTNAME: ${{ secrets.EC2_HOST }}
         USER_NAME: ec2-user
       run: |
-        # Setup SSH
+        # Setup SSH with proper key format handling
         mkdir -p ~/.ssh
-        echo "$PRIVATE_KEY" > ~/.ssh/id_rsa
+        echo "$PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H $HOSTNAME >> ~/.ssh/known_hosts
+        chmod 700 ~/.ssh
+        
+        # Add known hosts to avoid host verification issues
+        ssh-keyscan -H $HOSTNAME >> ~/.ssh/known_hosts 2>/dev/null
+        
+        # Test SSH connection first
+        echo "Testing SSH connection..."
+        ssh -o BatchMode=yes -o ConnectTimeout=5 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "SSH connection successful" || {
+          echo "SSH connection failed. Let's debug..."
+          echo "Key file permissions:"
+          ls -la ~/.ssh/id_rsa
+          echo "Key file first few lines:"
+          head -n 5 ~/.ssh/id_rsa
+          echo "Attempting connection with verbose output..."
+          ssh -v -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "test" 2>&1 | head -n 20
+          exit 1
+        }
         
         # Create deployment package in a clean way
+        echo "Creating deployment package..."
         mkdir -p deployment_temp
-        rsync -av --exclude='node_modules' --exclude='.git' --exclude='.github' --exclude='deployment_temp' ./ deployment_temp/
+        
+        # Copy files excluding problematic directories
+        cp -r . deployment_temp/ 2>/dev/null || true
+        rm -rf deployment_temp/node_modules
+        rm -rf deployment_temp/.git
+        rm -rf deployment_temp/.github
+        rm -rf deployment_temp/deployment_temp
+        
         cd deployment_temp
         tar -czf ../deployment.tar.gz .
         cd ..
         rm -rf deployment_temp
         
+        echo "Deployment package created: $(ls -lh deployment.tar.gz)"
+        
         # Copy files to server
-        scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
+        echo "Copying files to server..."
+        scp -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
         
         # Deploy on server
-        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} '
+        echo "Deploying on server..."
+        ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} '
+          set -e  # Exit on any error
+          
+          echo "Setting up environment..."
+          
           # Setup environment if not already done
           if ! command -v node &> /dev/null; then
+            echo "Installing Node.js..."
             sudo yum update -y
             curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
             sudo yum install -y nodejs
+            
+            echo "Installing PM2..."
             sudo npm install -g pm2
+            
+            echo "Installing Nginx..."
             sudo amazon-linux-extras install nginx1 -y || sudo yum install -y nginx
             sudo systemctl start nginx
             sudo systemctl enable nginx
+            
+            echo "Creating application directory..."
             sudo mkdir -p /opt/lyra-beauty
             sudo chown ec2-user:ec2-user /opt/lyra-beauty
           fi
           
           # Deploy application
+          echo "Extracting application..."
           cd /opt/lyra-beauty
+          
+          # Backup existing if it exists
+          if [ -f package.json ]; then
+            echo "Backing up existing application..."
+            tar -czf backup-$(date +%Y%m%d-%H%M%S).tar.gz . 2>/dev/null || true
+          fi
+          
+          # Extract new version
           tar -xzf /tmp/deployment.tar.gz
+          rm /tmp/deployment.tar.gz
+          
+          echo "Installing dependencies..."
           npm install --production
           
           # Create environment file
-          echo "NODE_ENV=production
-          PORT=3000
-          SESSION_SECRET=lyra_beauty_production_$(date +%s)" > .env
+          echo "Creating environment file..."
+          cat > .env << ENV_EOF
+NODE_ENV=production
+PORT=3000
+SESSION_SECRET=lyra_beauty_production_$(date +%s)
+ENV_EOF
           
           # Create logs directory
           mkdir -p logs
           
           # Configure nginx if not already done
           if [ ! -f /etc/nginx/conf.d/lyra-beauty.conf ]; then
+            echo "Configuring Nginx..."
             sudo tee /etc/nginx/conf.d/lyra-beauty.conf > /dev/null << EOF
           server {
               listen 80;

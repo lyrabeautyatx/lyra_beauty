@@ -32,13 +32,13 @@ aws configure get aws_secret_access_key --profile sauthier-solutions
 
 ### EC2_SSH_KEY
 ```
-# Copy the entire contents of your private key file
-Get-Content lyra-beauty-key.pem | Out-String
+# Copy the entire contents of your access_lyra.pem file
+Get-Content access_lyra.pem | Out-String
 ```
 
 ### EC2_HOST
 ```
-50.16.56.23
+18.214.100.40
 ```
 
 ## Deployment Process

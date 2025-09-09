@@ -1,0 +1,96 @@
+name: Deploy to AWS EC2 via SSM
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests (if any)
+      run: npm test --if-present
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        
+    - name: Create deployment package
+      run: |
+        # Create deployment package
+        mkdir -p deployment
+        cp -r . deployment/
+        cd deployment
+        rm -rf node_modules .git .github deployment
+        npm install --production
+        tar -czf ../app.tar.gz .
+        cd ..
+        
+    - name: Upload to S3
+      run: |
+        # Upload deployment package to S3
+        aws s3 cp app.tar.gz s3://lyra-beauty-deployments-$(date +%Y%m%d)/app.tar.gz
+        
+    - name: Deploy via SSM
+      run: |
+        # Get EC2 instance ID
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=lyra-beauty-server" "Name=instance-state-name,Values=running" \
+          --query 'Reservations[0].Instances[0].InstanceId' \
+          --output text)
+          
+        if [ "$INSTANCE_ID" = "None" ] || [ "$INSTANCE_ID" = "null" ]; then
+          echo "EC2 instance not found or not running"
+          exit 1
+        fi
+        
+        echo "Deploying to instance: $INSTANCE_ID"
+        
+        # Execute deployment commands via SSM
+        aws ssm send-command \
+          --instance-ids $INSTANCE_ID \
+          --document-name "AWS-RunShellScript" \
+          --parameters 'commands=[
+            "sudo yum update -y",
+            "curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -",
+            "sudo yum install -y nodejs",
+            "sudo npm install -g pm2",
+            "sudo mkdir -p /opt/lyra-beauty",
+            "sudo chown ec2-user:ec2-user /opt/lyra-beauty",
+            "cd /opt/lyra-beauty",
+            "aws s3 cp s3://lyra-beauty-deployments-$(date +%Y%m%d)/app.tar.gz .",
+            "tar -xzf app.tar.gz",
+            "npm install --production",
+            "echo \"NODE_ENV=production\" > .env",
+            "echo \"PORT=3000\" >> .env",
+            "echo \"SESSION_SECRET=lyra_beauty_$(date +%s)\" >> .env",
+            "pm2 stop lyra-beauty || true",
+            "pm2 start ecosystem.config.js",
+            "pm2 save",
+            "sudo amazon-linux-extras install nginx1 -y || sudo yum install -y nginx",
+            "sudo systemctl start nginx",
+            "sudo systemctl enable nginx"
+          ]' \
+          --comment "Deploy Lyra Beauty App"
+          
+    - name: Deployment Status
+      run: |
+        echo "🚀 Deployment completed via SSM!"
+        echo "🌐 Application URL: http://${{ secrets.EC2_HOST }}"

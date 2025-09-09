@@ -1,0 +1,31 @@
+{
+  "Comment": "Update A record for lyrabeautyatx.com to new EC2 instance",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "lyrabeautyatx.com",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "18.214.100.40"
+          }
+        ]
+      }
+    },
+    {
+      "Action": "UPSERT", 
+      "ResourceRecordSet": {
+        "Name": "www.lyrabeautyatx.com",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "18.214.100.40"
+          }
+        ]
+      }
+    }
+  ]
+}
