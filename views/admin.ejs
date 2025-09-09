@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Panel - Lyra Beauty</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="container">
+    <h2>Admin Panel</h2>
+    <p>Welcome, <%= user.username %> (Admin)!</p>
+    
+    <h3>All Appointments</h3>
+    <% if (appointments.length > 0) { %>
+      <div class="appointments-list">
+        <% appointments.forEach(appointment => { %>
+          <div class="appointment-card">
+            <h4><%= appointment.username %> - <%= appointment.serviceInfo ? appointment.serviceInfo.name : appointment.service %></h4>
+            <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
+            <p><strong>Time:</strong> <%= appointment.time %></p>
+            <p><strong>Status:</strong> <%= appointment.status %></p>
+            <% if (appointment.paidAmount) { %>
+              <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
+              <p><strong>Payment ID:</strong> <%= appointment.paymentId %></p>
+            <% } %>
+          </div>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <p>No appointments scheduled.</p>
+    <% } %>
+    
+    <a href="/dashboard">User Dashboard</a> | <a href="/logout">Logout</a>
+  </div>
+</body>
+</html>

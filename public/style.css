@@ -1,0 +1,157 @@
+body.gold-bg {
+  background: linear-gradient(135deg, #fffbe6 0%, #ffd700 100%);
+  color: #333;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  min-height: 100vh;
+}
+
+.container {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  padding: 2rem;
+  margin: 3rem auto;
+  max-width: 600px;
+  text-align: center;
+}
+
+h1, h2 {
+  color: #bfa14a;
+}
+
+.error {
+  color: #d9534f;
+  margin-bottom: 1rem;
+}
+
+a {
+  color: #bfa14a;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.btn {
+  background: #bfa14a;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  text-decoration: none;
+  display: inline-block;
+  margin: 5px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: #a08a3a;
+  text-decoration: none;
+}
+
+.dashboard-links {
+  margin: 2rem 0;
+}
+
+.form-group {
+  margin: 1rem 0;
+  text-align: left;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.time-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.time-slot {
+  background: #f9f9f9;
+  border: 2px solid #ddd;
+  border-radius: 5px;
+  padding: 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.time-slot:hover {
+  border-color: #bfa14a;
+}
+
+.time-slot input[type="radio"] {
+  display: none;
+}
+
+.time-slot input[type="radio"]:checked + label,
+.time-slot:has(input[type="radio"]:checked) {
+  background: #bfa14a;
+  color: white;
+  border-color: #bfa14a;
+}
+
+.date-form {
+  margin: 1rem 0;
+}
+
+.appointments-list {
+  text-align: left;
+}
+
+.appointment-card {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.booking-summary {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 1rem;
+  margin: 1rem 0;
+  text-align: left;
+}
+
+#payment-form {
+  margin: 2rem 0;
+}
+
+#card-container {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: white;
+}
+
+#payment-status {
+  margin: 1rem 0;
+}
+
+.success {
+  color: #5cb85c;
+  font-weight: bold;
+}
+
+.error {
+  color: #d9534f;
+  font-weight: bold;
+}

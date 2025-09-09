@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lyra Beauty</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="container">
+    <h1>Welcome to Lyra Beauty</h1>
+    <% if (user) { %>
+      <p>Hello, <%= user.username %>!</p>
+      <a href="/dashboard">Dashboard</a>
+      <% if (user.role === 'admin') { %>
+        | <a href="/admin">Admin Panel</a>
+      <% } %>
+      | <a href="/logout">Logout</a>
+    <% } else { %>
+      <a href="/login">Login</a>
+    <% } %>
+  </div>
+</body>
+</html>

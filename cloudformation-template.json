@@ -1,0 +1,181 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Lyra Beauty Node.js App on EC2 Free Tier",
+  
+  "Parameters": {
+    "KeyName": {
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance"
+    }
+  },
+  
+  "Resources": {
+    "VPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": "10.0.0.0/16",
+        "EnableDnsHostnames": true,
+        "EnableDnsSupport": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-VPC"
+          }
+        ]
+      }
+    },
+    
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-IGW"
+          }
+        ]
+      }
+    },
+    
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "InternetGatewayId": {"Ref": "InternetGateway"}
+      }
+    },
+    
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": {"Fn::Select": [0, {"Fn::GetAZs": ""}]},
+        "MapPublicIpOnLaunch": true,
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-Public-Subnet"
+          }
+        ]
+      }
+    },
+    
+    "RouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {"Ref": "VPC"},
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-RouteTable"
+          }
+        ]
+      }
+    },
+    
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "RouteTableId": {"Ref": "RouteTable"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {"Ref": "InternetGateway"}
+      }
+    },
+    
+    "SubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet"},
+        "RouteTableId": {"Ref": "RouteTable"}
+      }
+    },
+    
+    "SecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for Lyra Beauty application",
+        "VpcId": {"Ref": "VPC"},
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 22,
+            "ToPort": 22,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-SecurityGroup"
+          }
+        ]
+      }
+    },
+    
+    "EC2Instance": {
+      "Type": "AWS::EC2::Instance",
+      "Properties": {
+        "ImageId": "ami-0c02fb55956c7d316",
+        "InstanceType": "t2.micro",
+        "KeyName": {"Ref": "KeyName"},
+        "SecurityGroupIds": [{"Ref": "SecurityGroup"}],
+        "SubnetId": {"Ref": "PublicSubnet"},
+        "UserData": {
+          "Fn::Base64": {
+            "Fn::Join": [
+              "\n",
+              [
+                "#!/bin/bash",
+                "yum update -y",
+                "curl -fsSL https://rpm.nodesource.com/setup_18.x | bash -",
+                "yum install -y nodejs git",
+                "npm install -g pm2",
+                "amazon-linux-extras install nginx1 -y",
+                "systemctl start nginx",
+                "systemctl enable nginx",
+                "mkdir -p /opt/lyra-beauty",
+                "chown ec2-user:ec2-user /opt/lyra-beauty",
+                "echo 'Deployment ready! SSH in and deploy your code.'"
+              ]
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "LyraBeauty-Instance"
+          }
+        ]
+      }
+    }
+  },
+  
+  "Outputs": {
+    "InstanceId": {
+      "Description": "Instance ID of the newly created EC2 instance",
+      "Value": {"Ref": "EC2Instance"}
+    },
+    "PublicDNS": {
+      "Description": "Public DNS name of the newly created EC2 instance",
+      "Value": {"Fn::GetAtt": ["EC2Instance", "PublicDnsName"]}
+    },
+    "PublicIP": {
+      "Description": "Public IP address of the newly created EC2 instance",
+      "Value": {"Fn::GetAtt": ["EC2Instance", "PublicIp"]}
+    }
+  }
+}

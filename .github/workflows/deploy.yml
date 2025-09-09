@@ -1,0 +1,115 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run tests (if any)
+      run: npm test --if-present
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+        
+    - name: Deploy to EC2
+      env:
+        PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        HOSTNAME: ${{ secrets.EC2_HOST }}
+        USER_NAME: ec2-user
+      run: |
+        echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
+        
+        # Create deployment package
+        tar --exclude='node_modules' --exclude='.git' --exclude='private_key' -czf deployment.tar.gz .
+        
+        # Copy files to server
+        scp -o StrictHostKeyChecking=no -i private_key deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
+        
+        # Deploy on server
+        ssh -o StrictHostKeyChecking=no -i private_key ${USER_NAME}@${HOSTNAME} '
+          # Setup environment if not already done
+          if ! command -v node &> /dev/null; then
+            sudo yum update -y
+            curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+            sudo yum install -y nodejs
+            sudo npm install -g pm2
+            sudo amazon-linux-extras install nginx1 -y
+            sudo systemctl start nginx
+            sudo systemctl enable nginx
+            sudo mkdir -p /opt/lyra-beauty
+            sudo chown ec2-user:ec2-user /opt/lyra-beauty
+          fi
+          
+          # Deploy application
+          cd /opt/lyra-beauty
+          tar -xzf /tmp/deployment.tar.gz
+          npm install --production
+          
+          # Create environment file
+          echo "NODE_ENV=production
+          PORT=3000
+          SESSION_SECRET=lyra_beauty_production_$(date +%s)" > .env
+          
+          # Create logs directory
+          mkdir -p logs
+          
+          # Configure nginx if not already done
+          if [ ! -f /etc/nginx/conf.d/lyra-beauty.conf ]; then
+            sudo tee /etc/nginx/conf.d/lyra-beauty.conf > /dev/null << EOF
+          server {
+              listen 80;
+              server_name _;
+              
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection '"'"'upgrade'"'"';
+                  proxy_set_header Host \$host;
+                  proxy_set_header X-Real-IP \$remote_addr;
+                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto \$scheme;
+                  proxy_cache_bypass \$http_upgrade;
+              }
+          }
+          EOF
+            sudo systemctl restart nginx
+          fi
+          
+          # Start/restart application with PM2
+          pm2 stop lyra-beauty || true
+          pm2 start ecosystem.config.js
+          pm2 save
+          
+          echo "Deployment completed successfully!"
+        '
+        
+    - name: Cleanup
+      run: rm -f private_key
+      
+    - name: Deployment Status
+      run: |
+        echo "🚀 Deployment completed!"
+        echo "🌐 Application URL: http://${{ secrets.EC2_HOST }}"

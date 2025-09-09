@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>User Dashboard - Lyra Beauty</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="container">
+    <h2>User Dashboard</h2>
+    <p>Welcome, <%= user.username %>!</p>
+    
+    <div class="dashboard-links">
+      <a href="/book" class="btn">Book Appointment</a>
+      <a href="/my-appointments" class="btn">My Appointments</a>
+    </div>
+    
+    <a href="/logout">Logout</a>
+  </div>
+</body>
+</html>

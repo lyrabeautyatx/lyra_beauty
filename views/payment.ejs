@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment - Lyra Beauty</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="container">
+    <h2>Complete Your Payment</h2>
+    
+    <div class="booking-summary">
+      <h3>Appointment Summary</h3>
+      <p><strong>Service:</strong> <%= booking.serviceInfo.name %></p>
+      <p><strong>Date:</strong> <%= moment(booking.date).format('MMMM Do, YYYY') %></p>
+      <p><strong>Time:</strong> <%= booking.time %></p>
+      <p><strong>Amount:</strong> $<%= (booking.serviceInfo.price / 100).toFixed(2) %></p>
+    </div>
+    
+    <div id="payment-form">
+      <h3>Payment Information</h3>
+      <p><em>This is a demo payment form. In production, this would integrate with Square's secure payment system.</em></p>
+      
+      <div class="form-group">
+        <label>Card Number:</label>
+        <input type="text" id="card-number" placeholder="4111 1111 1111 1111" maxlength="19">
+      </div>
+      
+      <div class="form-group">
+        <label>Expiry Date:</label>
+        <input type="text" id="expiry" placeholder="MM/YY" maxlength="5">
+      </div>
+      
+      <div class="form-group">
+        <label>CVV:</label>
+        <input type="text" id="cvv" placeholder="123" maxlength="4">
+      </div>
+      
+      <div class="form-group">
+        <label>Cardholder Name:</label>
+        <input type="text" id="cardholder" placeholder="John Doe">
+      </div>
+      
+      <button id="pay-button" type="button" class="btn">Pay $<%= (booking.serviceInfo.price / 100).toFixed(2) %></button>
+    </div>
+    
+    <div id="payment-status"></div>
+    
+    <a href="/book">Back to Booking</a>
+  </div>
+
+  <script>
+    document.getElementById('pay-button').addEventListener('click', async function() {
+      const button = this;
+      const statusDiv = document.getElementById('payment-status');
+      
+      // Basic validation
+      const cardNumber = document.getElementById('card-number').value;
+      const expiry = document.getElementById('expiry').value;
+      const cvv = document.getElementById('cvv').value;
+      const cardholder = document.getElementById('cardholder').value;
+      
+      if (!cardNumber || !expiry || !cvv || !cardholder) {
+        statusDiv.innerHTML = '<p class="error">Please fill in all payment fields</p>';
+        return;
+      }
+      
+      button.disabled = true;
+      statusDiv.innerHTML = '<p>Processing payment...</p>';
+      
+      try {
+        const response = await fetch('/process-payment', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            sourceId: 'mock_card_source',
+            cardDetails: {
+              cardNumber,
+              expiry,
+              cvv,
+              cardholder
+            }
+          }),
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          statusDiv.innerHTML = '<p class="success">Payment successful! Redirecting to your appointments...</p>';
+          setTimeout(() => {
+            window.location.href = '/my-appointments';
+          }, 2000);
+        } else {
+          throw new Error(result.error || 'Payment failed');
+        }
+      } catch (error) {
+        button.disabled = false;
+        statusDiv.innerHTML = `<p class="error">Payment failed: ${error.message}</p>`;
+      }
+    });
+    
+    // Format card number input
+    document.getElementById('card-number').addEventListener('input', function(e) {
+      let value = e.target.value.replace(/\s/g, '').replace(/[^0-9]/gi, '');
+      let formattedValue = value.match(/.{1,4}/g)?.join(' ') || value;
+      e.target.value = formattedValue;
+    });
+    
+    // Format expiry input
+    document.getElementById('expiry').addEventListener('input', function(e) {
+      let value = e.target.value.replace(/\D/g, '');
+      if (value.length >= 2) {
+        value = value.substring(0, 2) + '/' + value.substring(2, 4);
+      }
+      e.target.value = value;
+    });
+  </script>
+</body>
+</html>
