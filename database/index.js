@@ -1,15 +1,22 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
 class Database {
-  constructor(dbPath = path.join(__dirname, '..', 'lyra_beauty.db')) {
-    this.dbPath = dbPath;
+  constructor() {
     this.db = null;
+    this.dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'lyra_beauty.db');
     this.ready = false;
   }
 
   async connect() {
     return new Promise((resolve, reject) => {
+      // Ensure database directory exists
+      const dbDir = path.dirname(this.dbPath);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
           console.error('Database connection failed:', err.message);
@@ -18,6 +25,10 @@ class Database {
         } else {
           console.log('Database connected successfully to:', this.dbPath);
           this.ready = true;
+          
+          // Enable foreign key constraints
+          this.db.run('PRAGMA foreign_keys = ON');
+          
           resolve();
         }
       });
