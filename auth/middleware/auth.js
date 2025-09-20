@@ -7,21 +7,44 @@ function requireAuth(req, res, next) {
     return next();
   }
   
-  // Check for JWT token in headers
-  const token = req.headers.authorization?.split(' ')[1];
+  // Check for JWT token in headers or cookies
+  let token = req.headers.authorization?.split(' ')[1];
+  if (!token && req.cookies && req.cookies.jwt_token) {
+    token = req.cookies.jwt_token;
+  }
+  
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+      
+      // Check if token is close to expiring (within 1 hour) and refresh if needed
+      const now = Math.floor(Date.now() / 1000);
+      const timeToExpiry = decoded.exp - now;
+      
       // For JWT tokens, we'll trust the decoded data without database lookup for performance
       // The user data is embedded in the token
       req.user = {
         id: decoded.userId,
         email: decoded.email,
-        role: decoded.role
+        role: decoded.role,
+        tokenExpiry: decoded.exp
       };
+      
+      // If token expires in less than 1 hour, mark for refresh
+      if (timeToExpiry < 3600) { // 1 hour in seconds
+        req.shouldRefreshToken = true;
+      }
+      
       return next();
     } catch (error) {
-      console.error('JWT verification failed:', error);
+      if (error.name === 'TokenExpiredError') {
+        console.log('JWT token expired, clearing cookie');
+        if (req.cookies && req.cookies.jwt_token) {
+          res.clearCookie('jwt_token');
+        }
+      } else {
+        console.error('JWT verification failed:', error);
+      }
     }
   }
   
@@ -73,12 +96,26 @@ function generateJWT(user) {
   const payload = {
     userId: user.id,
     email: user.email,
-    role: user.role
+    role: user.role,
+    iat: Math.floor(Date.now() / 1000) // issued at time
   };
   
   return jwt.sign(payload, process.env.JWT_SECRET || 'fallback_secret', {
     expiresIn: '24h'
   });
+}
+
+function refreshJWT(user) {
+  // Generate a new token with extended expiry
+  return generateJWT(user);
+}
+
+function verifyJWT(token) {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+  } catch (error) {
+    throw error;
+  }
 }
 
 function checkPermission(permission) {
@@ -99,10 +136,38 @@ function checkPermission(permission) {
   };
 }
 
+// Middleware to handle token refresh
+function handleTokenRefresh(req, res, next) {
+  if (req.shouldRefreshToken && req.user) {
+    try {
+      const newToken = refreshJWT(req.user);
+      
+      // Set the new token as an HTTP-only cookie
+      res.cookie('jwt_token', newToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      });
+      
+      // Also send in response header for API clients
+      res.set('Authorization', `Bearer ${newToken}`);
+      
+      console.log('JWT token refreshed for user:', req.user.email);
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+    }
+  }
+  next();
+}
+
 module.exports = {
   requireAuth,
   requireRole,
   requireAdmin,
   generateJWT,
-  checkPermission
+  refreshJWT,
+  verifyJWT,
+  checkPermission,
+  handleTokenRefresh
 };

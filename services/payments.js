@@ -20,6 +20,19 @@ function calculateRemainingPayment(totalAmount) {
 }
 
 /**
+ * Get service pricing information
+ * @returns {Object} Service pricing data in cents for Square
+ */
+async function getServicePricing() {
+  return {
+    'microblading': { name: 'Microblading', price: 35000 }, // $350.00
+    'microshading': { name: 'Microshading', price: 30000 }, // $300.00
+    'lipglow': { name: 'Lip Glow', price: 20000 }, // $200.00
+    'browmapping': { name: 'Brow Mapping', price: 15000 }  // $150.00
+  };
+}
+
+/**
  * Process down payment (20% of total) using Square
  * @param {Object} booking - Booking details
  * @param {string} sourceId - Square payment source ID
@@ -239,6 +252,7 @@ async function createRemainingPaymentInvoice(appointmentData, customerEmail) {
 module.exports = {
   calculateDownPayment,
   calculateRemainingPayment,
+  getServicePricing,
   processDownPayment,
   processFullPayment,
   createRemainingPaymentInvoice
