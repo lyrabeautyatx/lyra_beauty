@@ -1,5 +1,6 @@
 const express = require('express');
 const session = require('express-session');
+const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -21,7 +22,7 @@ const {
 
 // Import authentication components
 const authRoutes = require('./auth/routes/auth');
-const { requireAuth, requireAdmin } = require('./auth/middleware/auth');
+const { requireAuth, requireAdmin, handleTokenRefresh } = require('./auth/middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -162,6 +163,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(cookieParser()); // Add cookie parser for JWT cookies
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lyra_secret',
@@ -172,6 +174,9 @@ app.use(session({
 // Initialize Passport
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Add global token refresh middleware
+app.use(handleTokenRefresh);
 
 // OAuth routes
 app.use('/auth', authRoutes);
@@ -202,11 +207,32 @@ app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await authenticateUser(username, password);
   if (user) {
+    // Create session for backward compatibility
     req.session.user = {
       username: user.username,
       role: user.role,
-      id: user.id
+      id: user.id,
+      email: user.email || `${user.username}@legacy.local`
     };
+    
+    // Generate JWT token for session persistence
+    const { generateJWT } = require('./auth/middleware/auth');
+    const token = generateJWT({
+      id: user.id.toString(),
+      email: user.email || `${user.username}@legacy.local`,
+      role: user.role
+    });
+    
+    // Set JWT token as HTTP-only cookie
+    res.cookie('jwt_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+    
+    console.log(`✓ JWT token set for legacy user: ${user.username}`);
+    
     return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
   }
   res.render('login', { error: 'Invalid credentials' });
@@ -416,6 +442,9 @@ app.get('/logout', (req, res) => {
   if (req.user) {
     return res.redirect('/auth/logout');
   }
+  
+  // Clear JWT token cookie for both OAuth and legacy users
+  res.clearCookie('jwt_token');
   
   // Legacy logout for backward compatibility
   req.session.destroy(() => {
