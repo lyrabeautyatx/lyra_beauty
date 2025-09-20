@@ -22,7 +22,7 @@ const {
 
 // Import authentication components
 const authRoutes = require('./auth/routes/auth');
-const { requireAuth, requireAdmin, handleTokenRefresh } = require('./auth/middleware/auth');
+const { requireAuth, requireAdmin, requireCustomer, blockPartnerBooking, handleTokenRefresh } = require('./auth/middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -242,7 +242,7 @@ app.get('/dashboard', requireAuth, (req, res) => {
   res.render('dashboard', { user: req.session.user });
 });
 
-app.get('/book', requireAuth, async (req, res) => {
+app.get('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   const selectedDate = req.query.date || moment().format('YYYY-MM-DD');
   const timeSlots = generateTimeSlots(selectedDate);
   const availableSlots = [];
@@ -265,7 +265,7 @@ app.get('/book', requireAuth, async (req, res) => {
   });
 });
 
-app.post('/book', requireAuth, async (req, res) => {
+app.post('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   const { date, time, service } = req.body;
   
   if (!(await isSlotAvailable(date, time))) {
@@ -303,7 +303,7 @@ app.post('/book', requireAuth, async (req, res) => {
   res.redirect('/payment');
 });
 
-app.get('/payment', requireAuth, (req, res) => {
+app.get('/payment', requireAuth, blockPartnerBooking, (req, res) => {
   if (!req.session.pendingBooking) {
     return res.redirect('/book');
   }
@@ -325,7 +325,7 @@ app.get('/payment', requireAuth, (req, res) => {
   });
 });
 
-app.post('/process-payment', requireAuth, async (req, res) => {
+app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) => {
   if (!req.session.pendingBooking) {
     return res.status(400).json({ error: 'No pending booking found' });
   }
