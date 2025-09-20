@@ -2,8 +2,12 @@ const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const userService = require('../../services/user');
 
+// Load environment variables
+require('dotenv').config();
+
 // Only initialize Google OAuth if credentials are provided
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  console.log('Initializing Google OAuth strategy with client ID:', process.env.GOOGLE_CLIENT_ID);
   passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -11,7 +15,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   }, async (accessToken, refreshToken, profile, done) => {
     try {
       // Find or create user based on Google profile
-      const user = userService.findOrCreateUser(profile);
+      const user = await userService.findOrCreateUser(profile);
       return done(null, user);
     } catch (error) {
       console.error('Error in Google OAuth strategy:', error);
@@ -26,9 +30,9 @@ passport.serializeUser((user, done) => {
   done(null, user.id);
 });
 
-passport.deserializeUser((id, done) => {
+passport.deserializeUser(async (id, done) => {
   try {
-    const user = userService.getUserById(id);
+    const user = await userService.getUserById(id);
     done(null, user);
   } catch (error) {
     done(error, null);

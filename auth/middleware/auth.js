@@ -12,11 +12,14 @@ function requireAuth(req, res, next) {
   if (token) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-      const user = userService.getUserById(decoded.userId);
-      if (user) {
-        req.user = user;
-        return next();
-      }
+      // For JWT tokens, we'll trust the decoded data without database lookup for performance
+      // The user data is embedded in the token
+      req.user = {
+        id: decoded.userId,
+        email: decoded.email,
+        role: decoded.role
+      };
+      return next();
     } catch (error) {
       console.error('JWT verification failed:', error);
     }
