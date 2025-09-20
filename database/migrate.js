@@ -248,8 +248,12 @@ class DataMigration {
       }
 
       // Map legacy service names to service keys
+      // Legacy mapping: In some legacy data exports, the service "haircut" was mistakenly used to refer to "microblading"
+      // appointments due to a previous data entry error in the old system. To ensure these appointments are migrated
+      // correctly, we map "haircut" to "microblading" here. Remove this mapping only if you are certain that no legacy
+      // data uses "haircut" to mean "microblading".
       const serviceMapping = {
-        'haircut': 'microblading', // Legacy mapping
+        'haircut': 'microblading',
         'microblading': 'microblading',
         'microshading': 'microshading',
         'lipglow': 'lipglow',
