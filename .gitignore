@@ -68,6 +68,10 @@ backup-*
 database/*.db
 database/backups/
 *.json.backup.*
+*.db
+
+# Test files
+cookies*.txt
 
 # Deployment files
 deployment/
