@@ -2,66 +2,11 @@ body.gold-bg {
   background: linear-gradient(135deg, #fffbe6 0%, #ffd700 100%);
   color: #333;
   font-family: 'Segoe UI', Arial, sans-serif;
-  min-height: 100vh;
 }
 
 .container {
   background: #fff;
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  padding: 2rem;
-  margin: 3rem auto;
-  max-width: 600px;
-  text-align: center;
-}
-
-h1, h2 {
-  color: #bfa14a;
-}
-
-.error {
-  color: #d9534f;
-  margin-bottom: 1rem;
-}
-
-a {
-  color: #bfa14a;
-  text-decoration: none;
-  font-weight: bold;
-}
-
-a:hover {
-  text-decoration: underline;
-}
-
-.btn {
-  background: #bfa14a;
-  color: white;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  text-decoration: none;
-  display: inline-block;
-  margin: 5px;
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: #a08a3a;
-  text-decoration: none;
-}
-
-/* Google OAuth Button Styles */
-.oauth-section {
-  margin: 2rem 0;
-}
-
-.google-btn {
-  background: #fff;
-  color: #757575;
-  border: 1px solid #dadce0;
-  display: flex;
-  align-items: center;
   justify-content: center;
   padding: 12px 16px;
   font-size: 14px;
@@ -109,7 +54,6 @@ a:hover {
 }
 
 .oauth-note {
-  font-size: 12px;
   color: #757575;
   margin-top: 0.5rem;
 }
@@ -229,7 +173,6 @@ a:hover {
 }
 
 .error {
-  color: #d9534f;
   font-weight: bold;
 }
 
@@ -330,6 +273,78 @@ a:hover {
   outline: none;
   border-color: #bfa14a;
   box-shadow: 0 0 0 2px rgba(191, 161, 74, 0.2);
+/* Admin Service Management Styles */
+.admin-nav {
+  margin: 1rem 0;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.nav-tab {
+  background: none;
+  border: none;
+  padding: 10px 20px;
+  margin-right: 10px;
+  cursor: pointer;
+  color: #666;
+  border-bottom: 2px solid transparent;
+  font-weight: bold;
+}
+
+.nav-tab.active {
+  color: #bfa14a;
+  border-bottom-color: #bfa14a;
+}
+
+.nav-tab:hover {
+  color: #bfa14a;
+}
+
+.tab-content {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.form-container {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  border-color: #bfa14a;
+  outline: none;
+  box-shadow: 0 0 5px rgba(191, 161, 74, 0.3);
+}
+
+.form-actions {
+  margin-top: 1.5rem;
+  text-align: right;
 }
 
 .services-grid {
@@ -351,6 +366,11 @@ a:hover {
 .service-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+
+.service-card.inactive {
+  opacity: 0.7;
+  background: #f5f5f5;
 }
 
 .service-header {
@@ -425,11 +445,69 @@ a:hover {
   background: #a08a3a;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(191, 161, 74, 0.3);
+=======
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.service-header h4 {
+  margin: 0;
+  color: #333;
+}
+
+.service-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.status-inactive {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.service-details p {
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+.service-details strong {
+  color: #333;
+}
+
+.service-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  margin-right: 5px;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #0056b3;
+>>>>>>> main
 }
 
 .btn-secondary {
   background: #6c757d;
   color: white;
+<<<<<<< HEAD
   padding: 0.75rem 1.5rem;
   border: none;
   border-radius: 25px;
@@ -438,10 +516,13 @@ a:hover {
   font-weight: 600;
   transition: all 0.3s ease;
   font-size: 1rem;
+=======
+>>>>>>> main
 }
 
 .btn-secondary:hover {
   background: #545b62;
+<<<<<<< HEAD
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
 }
@@ -476,12 +557,97 @@ a:hover {
   font-size: 1.1em;
   color: #666;
   padding: 3rem;
+=======
+}
+
+.btn-success {
+  background: #28a745;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #1e7e34;
+}
+
+.btn-warning {
+  background: #ffc107;
+  color: #212529;
+}
+
+.btn-warning:hover {
+  background: #e0a800;
+}
+
+.btn-danger {
+  background: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c82333;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+  background-color: #fff;
+  margin: 10% auto;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  position: relative;
+}
+
+.close {
+  position: absolute;
+  right: 1rem;
+  top: 1rem;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #aaa;
+}
+
+.close:hover {
+  color: #000;
+}
+
+/* Message Styles */
+.message {
+  padding: 10px 15px;
+  margin: 10px 0;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.message-success {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.message-error {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+>>>>>>> main
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
   .services-grid {
     grid-template-columns: 1fr;
+<<<<<<< HEAD
     gap: 1.5rem;
   }
   
@@ -491,10 +657,19 @@ a:hover {
   
   .search-input, .filter-select {
     min-width: auto;
+=======
+  }
+  
+  .container {
+    margin: 1rem;
+    padding: 1rem;
+    max-width: none;
+>>>>>>> main
   }
   
   .service-header {
     flex-direction: column;
+<<<<<<< HEAD
     gap: 1rem;
     text-align: center;
   }
@@ -541,3 +716,20 @@ a:hover {
 .home-actions .btn {
   margin: 0.5rem;
 }
+=======
+    align-items: flex-start;
+  }
+  
+  .service-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  
+  .btn-sm {
+    flex: 1;
+    min-width: 80px;
+    margin-right: 0;
+  }
+}
+>>>>>>> main

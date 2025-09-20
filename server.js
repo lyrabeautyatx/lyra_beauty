@@ -22,7 +22,7 @@ const {
 
 // Import authentication components
 const authRoutes = require('./auth/routes/auth');
-const { requireAuth, requireAdmin, handleTokenRefresh } = require('./auth/middleware/auth');
+const { requireAuth, requireAdmin, requireCustomer, blockPartnerBooking, handleTokenRefresh } = require('./auth/middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -184,6 +184,10 @@ app.use('/auth', authRoutes);
 // Webhook routes
 app.use('/webhooks', webhookRoutes);
 
+// Service management routes
+const serviceRoutes = require('./routes/services');
+app.use('/api/services', serviceRoutes);
+
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();
@@ -217,8 +221,54 @@ app.get('/services', async (req, res) => {
   }
 });
 
+// Show login page (with sign up option)
 app.get('/login', (req, res) => {
   res.render('login', { error: null });
+});
+
+// Handle sign up POST
+app.post('/signup', async (req, res) => {
+  const { new_username, new_password } = req.body;
+  if (!new_username || !new_password) {
+    return res.render('login', { error: 'Username and password required for sign up.' });
+  }
+  try {
+    // Check if username exists
+    const existing = await db.get('SELECT * FROM users WHERE username = ?', [new_username]);
+    if (existing) {
+      return res.render('login', { error: 'Username already taken.' });
+    }
+    // Insert new user (role: customer)
+    const result = await db.run(
+      'INSERT INTO users (username, password, role) VALUES (?, ?, ?)',
+      [new_username, new_password, 'customer']
+    );
+    // Auto-login after sign up
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [result.id]);
+    req.session.user = {
+      username: user.username,
+      role: user.role,
+      id: user.id,
+      email: user.email || `${user.username}@legacy.local`
+    };
+    // Generate JWT token for session persistence
+    const { generateJWT } = require('./auth/middleware/auth');
+    const token = generateJWT({
+      id: user.id.toString(),
+      email: user.email || `${user.username}@legacy.local`,
+      role: user.role
+    });
+    res.cookie('jwt_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000
+    });
+    return res.redirect('/dashboard');
+  } catch (err) {
+    console.error('Sign up error:', err);
+    return res.render('login', { error: 'Sign up failed. Please try again.' });
+  }
 });
 
 app.post('/login', async (req, res) => {
@@ -260,7 +310,7 @@ app.get('/dashboard', requireAuth, (req, res) => {
   res.render('dashboard', { user: req.session.user });
 });
 
-app.get('/book', requireAuth, async (req, res) => {
+app.get('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   const selectedDate = req.query.date || moment().format('YYYY-MM-DD');
   const preSelectedService = req.query.service || ''; // Get pre-selected service from query params
   const timeSlots = generateTimeSlots(selectedDate);
@@ -285,7 +335,7 @@ app.get('/book', requireAuth, async (req, res) => {
   });
 });
 
-app.post('/book', requireAuth, async (req, res) => {
+app.post('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   const { date, time, service } = req.body;
   
   if (!(await isSlotAvailable(date, time))) {
@@ -323,7 +373,7 @@ app.post('/book', requireAuth, async (req, res) => {
   res.redirect('/payment');
 });
 
-app.get('/payment', requireAuth, (req, res) => {
+app.get('/payment', requireAuth, blockPartnerBooking, (req, res) => {
   if (!req.session.pendingBooking) {
     return res.redirect('/book');
   }
@@ -345,7 +395,7 @@ app.get('/payment', requireAuth, (req, res) => {
   });
 });
 
-app.post('/process-payment', requireAuth, async (req, res) => {
+app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) => {
   if (!req.session.pendingBooking) {
     return res.status(400).json({ error: 'No pending booking found' });
   }
