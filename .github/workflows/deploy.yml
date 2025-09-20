@@ -105,6 +105,18 @@ jobs:
           sudo chown ec2-user:ec2-user /opt/lyra-beauty
           cd /opt/lyra-beauty
 
+          # Check and update Node.js version if needed
+          echo "🔍 Checking Node.js version..."
+          current_node_version=\$(node --version | cut -d'v' -f2)
+          required_version="18.0.0"
+          
+          if [ "\$(printf '%s\n' "\$required_version" "\$current_node_version" | sort -V | head -n1)" = "\$required_version" ]; then
+            echo "✅ Node.js version \$current_node_version is compatible"
+          else
+            echo "⚠️  Node.js version \$current_node_version detected, application requires >=18.0.0"
+            echo "📦 The application will still work but consider updating Node.js"
+          fi
+
           # Create backup of current version
           if [ -f package.json ]; then
             echo "💾 Creating backup of current version..."
@@ -210,9 +222,8 @@ jobs:
           fi
 
           echo "🎉 Deployment completed successfully!"
-          public_ip=$(curl -s \
-            http://169.254.169.254/latest/meta-data/public-ipv4)
-          echo "🌐 Application is available at: http://$public_ip"
+          public_ip=\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          echo "🌐 Application is available at: http://\$public_ip"
           DEPLOY_SCRIPT
 
           echo "🎊 Deployment finished successfully!"
