@@ -1,183 +1,173 @@
-name: Deploy to AWS EC2 (COMPLEX - DISABLED)
+---
+name: Deploy to Production
 
 on:
-  # Disabled - using simple-deploy.yml instead
+  push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   deploy:
+    name: Deploy Application
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Run tests (if any)
-      run: npm test --if-present
-      
-    - name: Deploy to EC2
-      env:
-        PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
-        HOSTNAME: ${{ secrets.EC2_HOST }}
-        USER_NAME: ec2-user
-      run: |
-        # Setup SSH with proper key format handling
-        mkdir -p ~/.ssh
-        echo "$PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        chmod 700 ~/.ssh
-        
-        # Add known hosts to avoid host verification issues
-        ssh-keyscan -H $HOSTNAME >> ~/.ssh/known_hosts 2>/dev/null
-        
-        # Test SSH connection first
-        echo "Testing SSH connection..."
-        echo "Hostname: $HOSTNAME"
-        echo "User: $USER_NAME"
-        
-        # Debug SSH key format
-        echo "SSH key first line:"
-        head -n 1 ~/.ssh/id_rsa
-        echo "SSH key last line:"
-        tail -n 1 ~/.ssh/id_rsa
-        
-        ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "SSH connection successful" || {
-          echo "SSH connection failed. Let's debug..."
-          echo "Key file permissions:"
-          ls -la ~/.ssh/id_rsa
-          echo "Attempting connection with verbose output..."
-          ssh -v -o BatchMode=yes -o ConnectTimeout=15 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "test" 2>&1 | head -n 30
-          echo "Checking if host is reachable..."
-          ping -c 3 $HOSTNAME || echo "Host unreachable"
-          echo "Checking SSH port..."
-          nc -z -v $HOSTNAME 22 || echo "SSH port not accessible"
-          exit 1
-        }
-        
-        # Create deployment package in a clean way
-        echo "Creating deployment package..."
-        mkdir -p deployment_temp
-        
-        # Copy files excluding problematic directories
-        cp -r . deployment_temp/ 2>/dev/null || true
-        rm -rf deployment_temp/node_modules
-        rm -rf deployment_temp/.git
-        rm -rf deployment_temp/.github
-        rm -rf deployment_temp/deployment_temp
-        
-        cd deployment_temp
-        tar -czf ../deployment.tar.gz .
-        cd ..
-        rm -rf deployment_temp
-        
-        echo "Deployment package created: $(ls -lh deployment.tar.gz)"
-        
-        # Copy files to server
-        echo "Copying files to server..."
-        scp -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa deployment.tar.gz ${USER_NAME}@${HOSTNAME}:/tmp/
-        
-        # Deploy on server
-        echo "Deploying on server..."
-        ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} '
-          set -e  # Exit on any error
-          
-          echo "Setting up environment..."
-          
-          # Setup environment if not already done
-          if ! command -v node &> /dev/null; then
-            echo "Installing Node.js..."
-            sudo yum update -y
-            curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-            sudo yum install -y nodejs
-            
-            echo "Installing PM2..."
-            sudo npm install -g pm2
-            
-            echo "Installing Nginx..."
-            sudo amazon-linux-extras install nginx1 -y || sudo yum install -y nginx
-            sudo systemctl start nginx
-            sudo systemctl enable nginx
-            
-            echo "Creating application directory..."
-            sudo mkdir -p /opt/lyra-beauty
-            sudo chown ec2-user:ec2-user /opt/lyra-beauty
-          fi
-          
-          # Deploy application
-          echo "Extracting application..."
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Deploy to EC2
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOSTNAME: ${{ secrets.EC2_HOST }}
+        run: |
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" | sed 's/\\n/\n/g' > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          chmod 700 ~/.ssh
+
+          # Configure SSH client
+          cat >> ~/.ssh/config << EOF
+          Host production
+              HostName $HOSTNAME
+              User ec2-user
+              IdentityFile ~/.ssh/id_rsa
+              StrictHostKeyChecking no
+              UserKnownHostsFile /dev/null
+          EOF
+
+          # Test SSH connection
+          echo "🔌 Testing connection to production server..."
+          ssh production "echo 'Connection successful'" || {
+            echo "❌ SSH connection failed!"
+            exit 1
+          }
+
+          # Create deployment package
+          echo "📦 Creating deployment package..."
+          mkdir deployment
+
+          # Copy application files (exclude development/build artifacts)
+          rsync -av \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.pem' \
+            --exclude='*.log' \
+            --exclude='deployment' \
+            --exclude='.env' \
+            ./ deployment/
+
+          # Create compressed archive
+          cd deployment
+          tar -czf ../lyra-beauty-deploy.tar.gz .
+          cd ..
+
+          echo "✅ Package created: $(ls -lh lyra-beauty-deploy.tar.gz)"
+
+          # Deploy to production server
+          echo "🚀 Deploying to production server..."
+
+          # Upload deployment package
+          scp lyra-beauty-deploy.tar.gz production:/tmp/
+
+          # Execute deployment on server
+          ssh production << 'DEPLOY_SCRIPT'
+          set -e
+
+          echo "📁 Setting up deployment environment..."
+
+          # Ensure application directory exists
+          sudo mkdir -p /opt/lyra-beauty
+          sudo chown ec2-user:ec2-user /opt/lyra-beauty
           cd /opt/lyra-beauty
-          
-          # Backup existing if it exists
+
+          # Create backup of current version
           if [ -f package.json ]; then
-            echo "Backing up existing application..."
-            tar -czf backup-$(date +%Y%m%d-%H%M%S).tar.gz . 2>/dev/null || true
+            echo "💾 Creating backup of current version..."
+            tar -czf "backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
+              --exclude='backup-*.tar.gz' \
+              --exclude='node_modules' \
+              --exclude='logs/*.log' \
+              . || echo "Backup creation failed, continuing..."
           fi
-          
+
           # Extract new version
-          tar -xzf /tmp/deployment.tar.gz
-          rm /tmp/deployment.tar.gz
-          
-          echo "Installing dependencies..."
-          npm install --production
-          
-          # Create environment file
-          echo "Creating environment file..."
-          cat > .env << "ENV_EOF"
+          echo "📤 Extracting new application version..."
+          tar -xzf /tmp/lyra-beauty-deploy.tar.gz
+          rm /tmp/lyra-beauty-deploy.tar.gz
+
+          # Install production dependencies
+          echo "📦 Installing production dependencies..."
+          npm install --only=production --no-audit
+
+          # Setup environment
+          echo "⚙️ Configuring production environment..."
+          cat > .env << EOF
           NODE_ENV=production
           PORT=3000
-          SESSION_SECRET=lyra_beauty_production_$(date +%s)
-          ENV_EOF
-          
-          # Create logs directory
-          mkdir -p logs
-          
-          # Configure nginx if not already done
-          if [ ! -f /etc/nginx/conf.d/lyra-beauty.conf ]; then
-            echo "Configuring Nginx..."
-            sudo tee /etc/nginx/conf.d/lyra-beauty.conf > /dev/null << "EOF"
-          server {
-              listen 80;
-              server_name _;
-              
-              location / {
-                  proxy_pass http://localhost:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
-                  proxy_set_header Connection '"'"'upgrade'"'"';
-                  proxy_set_header Host \$host;
-                  proxy_set_header X-Real-IP \$remote_addr;
-                  proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto \$scheme;
-                  proxy_cache_bypass \$http_upgrade;
-              }
-          }
+          SESSION_SECRET=lyra_beauty_prod_$(openssl rand -hex 32)
           EOF
-            sudo systemctl restart nginx
-          fi
-          
-          # Start/restart application with PM2
-          pm2 stop lyra-beauty || true
+
+          # Ensure logs directory exists
+          mkdir -p logs
+
+          # Restart application using PM2 ecosystem
+          echo "🔄 Restarting application with PM2..."
+
+          # Stop existing application gracefully
+          pm2 stop lyra-beauty 2>/dev/null || echo "App not running"
+          pm2 delete lyra-beauty 2>/dev/null || echo "App not in PM2"
+
+          # Start application using ecosystem configuration
           pm2 start ecosystem.config.js
+
+          # Save PM2 configuration
           pm2 save
-          
-          echo "Deployment completed successfully!"
-        '
-        
-    - name: Cleanup
-      run: |
-        rm -f deployment.tar.gz
-        rm -f ~/.ssh/id_rsa
-      
-    - name: Deployment Status
-      run: |
-        echo "🚀 Deployment completed!"
-        echo "🌐 Application URL: http://${{ secrets.EC2_HOST }}"
+
+          # Verify application is running
+          sleep 5
+          if pm2 list | grep -q "lyra-beauty.*online"; then
+            echo "✅ Application started successfully!"
+          else
+            echo "❌ Application failed to start!"
+            pm2 logs lyra-beauty --lines 20
+            exit 1
+          fi
+
+          echo "🎉 Deployment completed successfully!"
+          public_ip=$(curl -s \
+            http://169.254.169.254/latest/meta-data/public-ipv4)
+          echo "🌐 Application is available at: http://$public_ip"
+          DEPLOY_SCRIPT
+
+          echo "🎊 Deployment finished successfully!"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+          rm -f lyra-beauty-deploy.tar.gz
+          rm -rf deployment
+
+      - name: Deployment Summary
+        run: |
+          echo "🚀 Deployment Summary"
+          echo "====================="
+          echo "✅ Code deployed from main branch"
+          echo "✅ Dependencies installed"
+          echo "✅ Application started with PM2"
+          echo "✅ Environment configured for production"
+          echo ""
+          echo "🌐 Application URLs:"
+          echo "   Primary: http://lyrabeautyatx.com"
+          echo "   Direct:  http://${{ secrets.EC2_HOST }}"
