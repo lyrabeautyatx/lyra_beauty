@@ -3,14 +3,26 @@ const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
+const passport = require('passport');
 
 // Load environment variables
 require('dotenv').config();
 
+// Import OAuth and payment configurations
+require('./auth/strategies/google'); // Initialize passport strategies
+const authRoutes = require('./auth/routes/auth');
+const { requireAuth, requireAdmin } = require('./auth/middleware/auth');
+const userService = require('./services/user');
+const paymentsService = require('./services/payments');
+const webhookRoutes = require('./routes/webhooks');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Hardcoded users
+// Initialize user service
+userService.initializeUsers();
+
+// Hardcoded users for backward compatibility
 const users = [
   { username: 'user1', password: 'pass1', role: 'user' },
   { username: 'admin', password: 'adminpass', role: 'admin' }
@@ -58,35 +70,73 @@ function isSlotAvailable(date, time) {
   return !appointments.some(apt => apt.date === date && apt.time === time);
 }
 
+// Express middleware
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json()); // For Square payment webhooks
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Session configuration
 app.use(session({
-  secret: 'lyra_secret',
+  secret: process.env.SESSION_SECRET || 'lyra_secret_change_in_production',
   resave: false,
-  saveUninitialized: false
+  saveUninitialized: false,
+  cookie: { secure: false } // Set to true if using HTTPS
 }));
 
-// Authentication middleware
-function requireAuth(req, res, next) {
-  if (req.session.user) return next();
+// Passport initialization for OAuth
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Enhanced authentication middleware that supports both OAuth and legacy users
+function requireAuthEnhanced(req, res, next) {
+  // Check OAuth user first
+  if (req.user) {
+    return next();
+  }
+  
+  // Check legacy session user
+  if (req.session && req.session.user) {
+    return next();
+  }
+  
   res.redirect('/login');
 }
 
-function requireAdmin(req, res, next) {
-  if (req.session.user && req.session.user.role === 'admin') return next();
+function requireAdminEnhanced(req, res, next) {
+  const user = req.user || req.session.user;
+  
+  if (!user) {
+    return res.redirect('/login');
+  }
+  
+  if (user.role === 'admin') {
+    return next();
+  }
+  
   res.status(403).send('Forbidden');
 }
 
+// Helper function to get user for templates
+function getTemplateUser(req) {
+  return req.user || req.session.user || null;
+}
+
+// Routes
 app.get('/', (req, res) => {
-  res.render('index', { user: req.session.user });
+  res.render('index', { user: getTemplateUser(req) });
 });
 
 app.get('/login', (req, res) => {
-  res.render('login', { error: null });
+  const isOAuthConfigured = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
+  res.render('login', { 
+    error: req.query.error ? 'Authentication error occurred' : null,
+    isOAuthConfigured
+  });
 });
 
+// Legacy login for backward compatibility
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
   const user = users.find(u => u.username === username && u.password === password);
@@ -94,20 +144,26 @@ app.post('/login', (req, res) => {
     req.session.user = user;
     return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
   }
-  res.render('login', { error: 'Invalid credentials' });
+  res.render('login', { 
+    error: 'Invalid credentials',
+    isOAuthConfigured: process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+  });
 });
 
-app.get('/dashboard', requireAuth, (req, res) => {
-  res.render('dashboard', { user: req.session.user });
+// OAuth routes
+app.use('/auth', authRoutes);
+
+app.get('/dashboard', requireAuthEnhanced, (req, res) => {
+  res.render('dashboard', { user: getTemplateUser(req) });
 });
 
-app.get('/book', requireAuth, (req, res) => {
+app.get('/book', requireAuthEnhanced, (req, res) => {
   const selectedDate = req.query.date || moment().format('YYYY-MM-DD');
   const timeSlots = generateTimeSlots(selectedDate);
   const availableSlots = timeSlots.filter(slot => isSlotAvailable(selectedDate, slot));
   
   res.render('book', { 
-    user: req.session.user, 
+    user: getTemplateUser(req), 
     selectedDate,
     availableSlots,
     servicePricing,
@@ -115,12 +171,12 @@ app.get('/book', requireAuth, (req, res) => {
   });
 });
 
-app.post('/book', requireAuth, (req, res) => {
+app.post('/book', requireAuthEnhanced, (req, res) => {
   const { date, time, service } = req.body;
   
   if (!isSlotAvailable(date, time)) {
     return res.render('book', { 
-      user: req.session.user, 
+      user: getTemplateUser(req), 
       selectedDate: date,
       availableSlots: generateTimeSlots(date).filter(slot => isSlotAvailable(date, slot)),
       servicePricing,
@@ -140,51 +196,79 @@ app.post('/book', requireAuth, (req, res) => {
   res.redirect('/payment');
 });
 
-app.get('/payment', requireAuth, (req, res) => {
+app.get('/payment', requireAuthEnhanced, (req, res) => {
   if (!req.session.pendingBooking) {
     return res.redirect('/book');
   }
   
   const booking = req.session.pendingBooking;
   res.render('payment', {
-    user: req.session.user,
+    user: getTemplateUser(req),
     booking,
-    applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
-    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID' // Replace with your Square Location ID
+    applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX',
+    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID',
+    moment
   });
 });
 
-app.post('/process-payment', requireAuth, async (req, res) => {
+app.post('/process-payment', requireAuthEnhanced, async (req, res) => {
   if (!req.session.pendingBooking) {
     return res.status(400).json({ error: 'No pending booking found' });
   }
   
-  const { sourceId, cardDetails } = req.body;
+  const { sourceId, paymentType } = req.body;
   const booking = req.session.pendingBooking;
+  const currentUser = getTemplateUser(req);
   
   try {
-    // Mock payment processing for demonstration
-    // In production, you would integrate with Square's API here
-    console.log('Processing payment for:', booking.serviceInfo.name);
-    console.log('Amount:', booking.serviceInfo.price / 100);
+    let paymentResult;
     
-    // Simulate payment success (you can add validation logic here)
-    const paymentSuccess = true; // Mock successful payment
+    if (paymentType === 'down_payment') {
+      paymentResult = await paymentsService.processDownPayment(booking, sourceId, booking.serviceInfo.price);
+    } else {
+      paymentResult = await paymentsService.processFullPayment(booking, sourceId, booking.serviceInfo.price);
+    }
     
-    if (paymentSuccess) {
-      // Save the appointment
+    if (paymentResult.success) {
+      // Save the appointment with enhanced user tracking
       const appointments = loadAppointments();
       const newAppointment = {
         id: Date.now(),
-        username: req.session.user.username,
+        // Support both OAuth and legacy users
+        username: currentUser.username || currentUser.email || currentUser.display_name,
+        userId: currentUser.id || null,
+        email: currentUser.email || null,
         date: booking.date,
         time: booking.time,
         service: booking.service,
         serviceInfo: booking.serviceInfo,
+        paymentType: paymentType,
+        paymentStatus: paymentType === 'down_payment' ? 'down_payment_completed' : 'completed',
+        totalAmount: booking.serviceInfo.price,
+        paidAmount: paymentResult.amount,
+        remainingAmount: paymentResult.remainingAmount,
         status: 'confirmed',
-        paymentId: `mock_payment_${Date.now()}`,
-        paidAmount: booking.serviceInfo.price
+        paymentData: {
+          paymentId: paymentResult.paymentId,
+          referenceId: paymentResult.referenceId,
+          status: paymentResult.status
+        },
+        createdAt: new Date().toISOString()
       };
+      
+      // Create invoice for remaining payment if it's a down payment
+      if (paymentType === 'down_payment' && paymentResult.remainingAmount > 0) {
+        const invoiceResult = await paymentsService.createRemainingPaymentInvoice(
+          booking, 
+          paymentResult.remainingAmount, 
+          paymentResult.paymentId
+        );
+        
+        if (invoiceResult.success) {
+          newAppointment.paymentData.invoiceId = invoiceResult.invoiceId;
+          newAppointment.paymentData.invoiceNumber = invoiceResult.invoiceNumber;
+        }
+      }
       
       appointments.push(newAppointment);
       saveAppointments(appointments);
@@ -194,7 +278,7 @@ app.post('/process-payment', requireAuth, async (req, res) => {
       
       res.json({ success: true, appointmentId: newAppointment.id });
     } else {
-      res.status(400).json({ error: 'Payment was not completed' });
+      res.status(400).json({ error: paymentResult.error });
     }
   } catch (error) {
     console.error('Payment error:', error);
@@ -202,32 +286,60 @@ app.post('/process-payment', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/my-appointments', requireAuth, (req, res) => {
+app.get('/my-appointments', requireAuthEnhanced, (req, res) => {
   const appointments = loadAppointments();
-  const userAppointments = appointments.filter(apt => apt.username === req.session.user.username);
+  const currentUser = getTemplateUser(req);
+  
+  // Filter appointments for both OAuth and legacy users
+  const userAppointments = appointments.filter(apt => 
+    apt.username === (currentUser.username || currentUser.email || currentUser.display_name) ||
+    apt.userId === currentUser.id ||
+    apt.email === currentUser.email
+  );
   
   res.render('my-appointments', { 
-    user: req.session.user, 
+    user: currentUser, 
     appointments: userAppointments,
     moment
   });
 });
 
-app.get('/admin', requireAuth, requireAdmin, (req, res) => {
+app.get('/admin', requireAuthEnhanced, requireAdminEnhanced, (req, res) => {
   const appointments = loadAppointments();
   res.render('admin', { 
-    user: req.session.user, 
+    user: getTemplateUser(req), 
     appointments,
     moment
   });
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/');
-  });
+  if (req.user) {
+    // OAuth logout
+    req.logout((err) => {
+      if (err) {
+        console.error('Logout error:', err);
+      }
+      req.session.destroy((err) => {
+        if (err) {
+          console.error('Session destroy error:', err);
+        }
+        res.redirect('/');
+      });
+    });
+  } else {
+    // Legacy logout
+    req.session.destroy(() => {
+      res.redirect('/');
+    });
+  }
 });
+
+// Webhook routes for Square
+app.use('/webhooks', webhookRoutes);
 
 app.listen(PORT, () => {
   console.log(`Lyra Beauty app running on http://localhost:${PORT}`);
+  console.log('OAuth configured:', !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET));
+  console.log('Square configured:', !!(process.env.SQUARE_ACCESS_TOKEN && process.env.SQUARE_APPLICATION_ID));
 });
