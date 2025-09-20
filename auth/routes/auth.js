@@ -2,10 +2,14 @@ const express = require('express');
 const passport = require('../strategies/google');
 const { generateJWT } = require('../middleware/auth');
 
+// Load environment variables
+require('dotenv').config();
+
 const router = express.Router();
 
 // Check if Google OAuth is configured
 const isOAuthConfigured = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
+console.log('OAuth configured:', isOAuthConfigured, 'Client ID:', process.env.GOOGLE_CLIENT_ID, 'Secret:', process.env.GOOGLE_CLIENT_SECRET ? '[present]' : '[missing]');
 
 // Initiate Google OAuth
 router.get('/google', (req, res, next) => {
@@ -14,14 +18,14 @@ router.get('/google', (req, res, next) => {
   }
   
   // Check if we have the google strategy available
-  const googleStrategy = passport._strategy('google');
-  if (!googleStrategy) {
+  try {
+    passport.authenticate('google', {
+      scope: ['profile', 'email']
+    })(req, res, next);
+  } catch (error) {
+    console.error('Google OAuth strategy error:', error);
     return res.status(503).json({ error: 'Google OAuth strategy not available' });
   }
-  
-  passport.authenticate('google', {
-    scope: ['profile', 'email']
-  })(req, res, next);
 });
 
 // Google OAuth callback

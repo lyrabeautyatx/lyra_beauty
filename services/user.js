@@ -1,88 +1,151 @@
-const fs = require('fs');
-const path = require('path');
+const { getDatabase } = require('../database');
 
-const usersFile = path.join(__dirname, '..', 'users.json');
+// Helper function to convert database user to application format
+function formatUser(dbUser) {
+  if (!dbUser) return null;
+  
+  return {
+    id: dbUser.id.toString(),
+    google_id: dbUser.google_id,
+    email: dbUser.email,
+    first_name: dbUser.first_name,
+    last_name: dbUser.last_name,
+    display_name: `${dbUser.first_name} ${dbUser.last_name}`,
+    role: dbUser.role,
+    partner_status: dbUser.partner_status,
+    has_used_coupon: Boolean(dbUser.has_used_coupon),
+    created_at: dbUser.created_at,
+    updated_at: dbUser.updated_at,
+    // Legacy fields for backward compatibility
+    username: dbUser.username,
+    password: dbUser.password
+  };
+}
 
-function loadUsers() {
+async function loadUsers() {
   try {
-    if (fs.existsSync(usersFile)) {
-      const data = fs.readFileSync(usersFile, 'utf8');
-      return JSON.parse(data);
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
     }
-    return [];
+    const users = await db.all('SELECT * FROM users');
+    return users.map(formatUser);
   } catch (error) {
-    console.error('Error loading users:', error);
+    console.error('Error loading users from database:', error);
     return [];
   }
 }
 
-function saveUsers(users) {
+async function saveUsers(users) {
+  // This function is deprecated with database implementation
+  // Individual user operations should use specific functions
+  console.warn('saveUsers() is deprecated. Use individual user operations instead.');
+}
+
+async function findOrCreateUser(profile) {
   try {
-    fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
+    }
+    
+    // Check if user already exists by Google ID
+    let user = await db.get('SELECT * FROM users WHERE google_id = ?', [profile.id]);
+    
+    if (!user) {
+      // Create new user with default customer role
+      const result = await db.run(`
+        INSERT INTO users (
+          google_id, email, first_name, last_name, 
+          username, password, role, partner_status, has_used_coupon
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        profile.id,
+        profile.emails?.[0]?.value || '',
+        profile.name?.givenName || 'User',
+        profile.name?.familyName || '',
+        `oauth_${profile.id}`, // Generate unique username for OAuth users
+        '', // No password for OAuth users
+        'customer',
+        null,
+        false
+      ]);
+      
+      // Get the created user
+      user = await db.get('SELECT * FROM users WHERE id = ?', [result.id]);
+      console.log(`✓ Created new OAuth user: ${user.email} (${user.google_id})`);
+    } else {
+      // Update existing user info if needed
+      await db.run(`
+        UPDATE users 
+        SET email = ?, first_name = ?, last_name = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE google_id = ?
+      `, [
+        profile.emails?.[0]?.value || user.email,
+        profile.name?.givenName || user.first_name,
+        profile.name?.familyName || user.last_name,
+        profile.id
+      ]);
+      
+      // Get updated user
+      user = await db.get('SELECT * FROM users WHERE google_id = ?', [profile.id]);
+      console.log(`✓ Updated existing OAuth user: ${user.email} (${user.google_id})`);
+    }
+    
+    return formatUser(user);
   } catch (error) {
-    console.error('Error saving users:', error);
+    console.error('Error in findOrCreateUser:', error);
+    throw error;
   }
 }
 
-function findOrCreateUser(profile) {
-  const users = loadUsers();
-  
-  // Check if user already exists by Google ID
-  let user = users.find(u => u.google_id === profile.id);
-  
-  if (!user) {
-    // Create new user with default customer role
-    user = {
-      id: Date.now().toString(),
-      google_id: profile.id,
-      email: profile.emails?.[0]?.value || '',
-      first_name: profile.name?.givenName || '',
-      last_name: profile.name?.familyName || '',
-      display_name: profile.displayName || '',
-      role: 'customer',
-      partner_status: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+async function getUserByGoogleId(googleId) {
+  try {
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
+    }
+    const user = await db.get('SELECT * FROM users WHERE google_id = ?', [googleId]);
+    return formatUser(user);
+  } catch (error) {
+    console.error('Error getting user by Google ID:', error);
+    return null;
+  }
+}
+
+async function getUserById(userId) {
+  try {
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
+    }
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    return formatUser(user);
+  } catch (error) {
+    console.error('Error getting user by ID:', error);
+    return null;
+  }
+}
+
+async function updateUserRole(userId, role) {
+  try {
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
+    }
     
-    users.push(user);
-    saveUsers(users);
-  } else {
-    // Update existing user info if needed
-    user.email = profile.emails?.[0]?.value || user.email;
-    user.first_name = profile.name?.givenName || user.first_name;
-    user.last_name = profile.name?.familyName || user.last_name;
-    user.display_name = profile.displayName || user.display_name;
-    user.updated_at = new Date().toISOString();
+    await db.run(`
+      UPDATE users 
+      SET role = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [role, userId]);
     
-    saveUsers(users);
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    return formatUser(user);
+  } catch (error) {
+    console.error('Error updating user role:', error);
+    return null;
   }
-  
-  return user;
-}
-
-function getUserByGoogleId(googleId) {
-  const users = loadUsers();
-  return users.find(u => u.google_id === googleId);
-}
-
-function getUserById(userId) {
-  const users = loadUsers();
-  return users.find(u => u.id === userId);
-}
-
-function updateUserRole(userId, role) {
-  const users = loadUsers();
-  const userIndex = users.findIndex(u => u.id === userId);
-  
-  if (userIndex !== -1) {
-    users[userIndex].role = role;
-    users[userIndex].updated_at = new Date().toISOString();
-    saveUsers(users);
-    return users[userIndex];
-  }
-  
-  return null;
 }
 
 function getUserPermissions(user) {
@@ -117,12 +180,23 @@ function getUserPermissions(user) {
 }
 
 // Initialize with a default admin user if no users exist
-function initializeUsers() {
-  const users = loadUsers();
-  if (users.length === 0) {
-    console.log('No users found, creating default admin user entry...');
-    // Note: This admin user will need to log in via Google OAuth first
-    // and then be manually promoted to admin role
+async function initializeUsers() {
+  try {
+    const db = getDatabase();
+    if (!db.isReady()) {
+      await db.connect();
+    }
+    
+    const userCount = await db.get('SELECT COUNT(*) as count FROM users');
+    if (userCount.count === 0) {
+      console.log('No users found, database migration should handle user creation');
+      // Note: Database migration will create default users
+      // OAuth users will be created when they first log in
+    } else {
+      console.log(`Found ${userCount.count} users in database`);
+    }
+  } catch (error) {
+    console.error('Error initializing users:', error);
   }
 }
 
