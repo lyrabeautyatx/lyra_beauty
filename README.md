@@ -18,7 +18,13 @@ A Node.js/Express web application for Lyra Beauty with authentication, appointme
    npm install
    ```
 
-2. **Configure Square payments (optional for testing):**
+2. **Set up database:**
+   ```powershell
+   npm run migrate
+   ```
+   This will create the SQLite database and migrate any existing appointment data.
+
+3. **Configure Square payments (optional for testing):**
    - Copy `.env.example` to `.env`
    - Sign up at [Square Developer Dashboard](https://developer.squareup.com/apps)
    - Create a new application
@@ -30,12 +36,12 @@ A Node.js/Express web application for Lyra Beauty with authentication, appointme
      ```
    - For testing without real Square account, the app includes demo sandbox credentials
 
-3. **Run the server:**
+4. **Run the server:**
    ```powershell
    node server.js
    ```
 
-4. **Access the app:**
+5. **Access the app:**
    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Hardcoded Users
@@ -60,17 +66,20 @@ For testing payments in sandbox mode, use Square's test card numbers:
 - `server.js` - Main server file
 - `views/` - EJS templates
 - `public/` - Static assets (CSS, images)
+- `database/` - SQLite database module and migrations
 - `routes/` - (Reserved for future route files)
-- `appointments.json` - Appointment storage
+- `appointments.json` - Legacy appointment storage (migrated to database)
 - `.env.example` - Environment variables template
 
 ## Production Deployment
 
 1. Replace sandbox credentials with production Square credentials
-2. Set up a proper database (PostgreSQL/MySQL) instead of JSON file storage
-3. Configure proper session store
-4. Add SSL/HTTPS
-5. Set up proper error logging
+2. Configure AWS S3 for database backups
+3. Set up automated daily backups using `npm run backup`
+4. Configure proper session store for production
+5. Add SSL/HTTPS
+6. Set up proper error logging
+7. Configure production database path and AWS credentials
 
 ---
 

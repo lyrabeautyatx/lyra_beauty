@@ -4,11 +4,12 @@ const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
 const passport = require('./auth/strategies/google');
+const { getDatabase } = require('./database');
 
 // Load environment variables
 require('dotenv').config();
 
-// Import webhook routes
+// Import webhook and payment services
 const webhookRoutes = require('./routes/webhooks');
 const { 
   processDownPayment, 
@@ -21,42 +22,114 @@ const {
 // Import authentication components
 const authRoutes = require('./auth/routes/auth');
 const { requireAuth, requireAdmin } = require('./auth/middleware/auth');
-const userService = require('./services/user');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize user service
-userService.initializeUsers();
+// Initialize database
+const db = getDatabase();
 
-// Legacy hardcoded users (kept for backward compatibility during transition)
-const users = [
-  { username: 'user1', password: 'pass1', role: 'user' },
-  { username: 'admin', password: 'adminpass', role: 'admin' }
-];
-
-// Service pricing (in cents for Square)
-const servicePricing = {
-  'microblading': { name: 'Microblading', price: 35000 }, // $350.00
-  'microshading': { name: 'Microshading', price: 30000 }, // $300.00
-  'lipglow': { name: 'Lip Glow', price: 20000 }, // $200.00
-  'browmapping': { name: 'Brow Mapping', price: 15000 }  // $150.00
-};
-
-// Appointment management
-const appointmentsFile = path.join(__dirname, 'appointments.json');
-
-function loadAppointments() {
+// Database initialization
+async function initializeDatabase() {
   try {
-    const data = fs.readFileSync(appointmentsFile, 'utf8');
-    return JSON.parse(data);
+    await db.connect();
+    console.log('Database connected successfully');
   } catch (error) {
+    console.error('Database connection failed:', error);
+    process.exit(1);
+  }
+}
+
+// User authentication helper
+async function authenticateUser(username, password) {
+  try {
+    const user = await db.get(
+      'SELECT * FROM users WHERE username = ? AND password = ?',
+      [username, password]
+    );
+    return user;
+  } catch (error) {
+    console.error('Authentication error:', error);
+    return null;
+  }
+}
+
+// Service pricing helper - now loads from database
+async function getServicePricing() {
+  try {
+    const services = await db.all('SELECT * FROM services WHERE active = 1');
+    const pricing = {};
+    services.forEach(service => {
+      pricing[service.service_key] = {
+        name: service.name,
+        price: Math.round(service.price * 100) // Convert to cents for Square
+      };
+    });
+    return pricing;
+  } catch (error) {
+    console.error('Error loading services:', error);
+    return {};
+  }
+}
+
+// Appointment management - now using database
+async function loadAppointments() {
+  try {
+    const appointments = await db.all(`
+      SELECT a.*, u.username, s.service_key, s.name as service_name, s.price as service_price
+      FROM appointments a
+      LEFT JOIN users u ON a.user_id = u.id
+      LEFT JOIN services s ON a.service_id = s.id
+      ORDER BY a.date, a.time
+    `);
+    
+    // Transform to match legacy format for compatibility
+    return appointments.map(apt => ({
+      id: apt.id,
+      username: apt.username,
+      date: apt.date,
+      time: apt.time,
+      service: apt.service_key,
+      serviceInfo: {
+        name: apt.service_name,
+        price: Math.round(apt.service_price * 100) // Convert to cents
+      },
+      status: apt.status,
+      paymentId: apt.payment_id,
+      paidAmount: apt.paid_amount
+    }));
+  } catch (error) {
+    console.error('Error loading appointments:', error);
     return [];
   }
 }
 
-function saveAppointments(appointments) {
-  fs.writeFileSync(appointmentsFile, JSON.stringify(appointments, null, 2));
+async function saveAppointment(appointmentData) {
+  try {
+    const { username, date, time, service, serviceInfo, status, paymentId, paidAmount } = appointmentData;
+    
+    // Get user ID
+    const user = await db.get('SELECT id FROM users WHERE username = ?', [username]);
+    if (!user) {
+      throw new Error(`User not found: ${username}`);
+    }
+    
+    // Get service ID
+    const serviceRecord = await db.get('SELECT id FROM services WHERE service_key = ?', [service]);
+    if (!serviceRecord) {
+      throw new Error(`Service not found: ${service}`);
+    }
+    
+    const result = await db.run(`
+      INSERT INTO appointments (user_id, service_id, date, time, status, payment_id, paid_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [user.id, serviceRecord.id, date, time, status, paymentId, paidAmount]);
+    
+    return result.id;
+  } catch (error) {
+    console.error('Error saving appointment:', error);
+    throw error;
+  }
 }
 
 function generateTimeSlots(date) {
@@ -72,9 +145,17 @@ function generateTimeSlots(date) {
   return slots;
 }
 
-function isSlotAvailable(date, time) {
-  const appointments = loadAppointments();
-  return !appointments.some(apt => apt.date === date && apt.time === time);
+async function isSlotAvailable(date, time) {
+  try {
+    const appointment = await db.get(
+      'SELECT id FROM appointments WHERE date = ? AND time = ? AND status != ?',
+      [date, time, 'cancelled']
+    );
+    return !appointment;
+  } catch (error) {
+    console.error('Error checking slot availability:', error);
+    return false;
+  }
 }
 
 app.set('view engine', 'ejs');
@@ -95,6 +176,9 @@ app.use(passport.session());
 // OAuth routes
 app.use('/auth', authRoutes);
 
+// Webhook routes
+app.use('/webhooks', webhookRoutes);
+
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();
@@ -106,9 +190,6 @@ function legacyRequireAdmin(req, res, next) {
   res.status(403).send('Forbidden');
 }
 
-// Webhook routes
-app.use('/webhooks', webhookRoutes);
-
 app.get('/', (req, res) => {
   res.render('index', { user: req.session.user });
 });
@@ -117,11 +198,15 @@ app.get('/login', (req, res) => {
   res.render('login', { error: null });
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = users.find(u => u.username === username && u.password === password);
+  const user = await authenticateUser(username, password);
   if (user) {
-    req.session.user = user;
+    req.session.user = {
+      username: user.username,
+      role: user.role,
+      id: user.id
+    };
     return res.redirect(user.role === 'admin' ? '/admin' : '/dashboard');
   }
   res.render('login', { error: 'Invalid credentials' });
@@ -131,10 +216,19 @@ app.get('/dashboard', requireAuth, (req, res) => {
   res.render('dashboard', { user: req.session.user });
 });
 
-app.get('/book', requireAuth, (req, res) => {
+app.get('/book', requireAuth, async (req, res) => {
   const selectedDate = req.query.date || moment().format('YYYY-MM-DD');
   const timeSlots = generateTimeSlots(selectedDate);
-  const availableSlots = timeSlots.filter(slot => isSlotAvailable(selectedDate, slot));
+  const availableSlots = [];
+  
+  // Check availability for each slot
+  for (const slot of timeSlots) {
+    if (await isSlotAvailable(selectedDate, slot)) {
+      availableSlots.push(slot);
+    }
+  }
+  
+  const servicePricing = await getServicePricing();
   
   res.render('book', { 
     user: req.session.user, 
@@ -145,19 +239,32 @@ app.get('/book', requireAuth, (req, res) => {
   });
 });
 
-app.post('/book', requireAuth, (req, res) => {
+app.post('/book', requireAuth, async (req, res) => {
   const { date, time, service } = req.body;
   
-  if (!isSlotAvailable(date, time)) {
+  if (!(await isSlotAvailable(date, time))) {
+    const timeSlots = generateTimeSlots(date);
+    const availableSlots = [];
+    
+    for (const slot of timeSlots) {
+      if (await isSlotAvailable(date, slot)) {
+        availableSlots.push(slot);
+      }
+    }
+    
+    const servicePricing = await getServicePricing();
+    
     return res.render('book', { 
       user: req.session.user, 
       selectedDate: date,
-      availableSlots: generateTimeSlots(date).filter(slot => isSlotAvailable(date, slot)),
+      availableSlots,
       servicePricing,
       moment,
       error: 'This time slot is no longer available'
     });
   }
+  
+  const servicePricing = await getServicePricing();
   
   // Store booking details in session for payment
   req.session.pendingBooking = {
@@ -206,43 +313,20 @@ app.post('/process-payment', requireAuth, async (req, res) => {
     
     if (paymentType === 'down') {
       // Process down payment (20%)
-      console.log('Processing down payment for:', booking.serviceInfo.name);
-      console.log('Total amount:', totalAmount / 100);
-      console.log('Down payment amount:', calculateDownPayment(totalAmount) / 100);
-      
       paymentResult = await processDownPayment(booking, sourceId, totalAmount);
       
       if (paymentResult.success) {
-        // Save the appointment with down payment information
-        const appointments = loadAppointments();
-        const user = req.session.user;
-        const userIdentifier = user.username || user.email || user.id;
-        
-        const newAppointment = {
-          id: Date.now(),
-          username: userIdentifier, // Keep for backward compatibility
-          user_id: user.id || user.username, // New field for OAuth users
-          user_email: user.email || '', // For OAuth users
+        // Save the appointment to database (down payment)
+        const appointmentId = await saveAppointment({
+          username: req.session.user.username,
           date: booking.date,
           time: booking.time,
           service: booking.service,
           serviceInfo: booking.serviceInfo,
           status: 'confirmed',
-          paymentStatus: 'down_payment_completed',
-          paymentType: 'down_payment',
-          totalAmount: totalAmount,
-          paidAmount: paymentResult.amount,
-          remainingAmount: paymentResult.remainingAmount,
-          paymentData: {
-            paymentId: paymentResult.paymentId,
-            referenceId: paymentResult.referenceId,
-            status: paymentResult.status,
-            createdAt: new Date().toISOString()
-          }
-        };
-        
-        appointments.push(newAppointment);
-        saveAppointments(appointments);
+          paymentId: paymentResult.paymentId,
+          paidAmount: paymentResult.amount
+        });
         
         // Create invoice for remaining payment
         const invoiceResult = await createRemainingPaymentInvoice(
@@ -251,18 +335,12 @@ app.post('/process-payment', requireAuth, async (req, res) => {
           paymentResult.paymentId
         );
         
-        if (invoiceResult.success) {
-          newAppointment.paymentData.invoiceId = invoiceResult.invoiceId;
-          newAppointment.paymentData.invoiceNumber = invoiceResult.invoiceNumber;
-          saveAppointments(appointments);
-        }
-        
         // Clear pending booking
         delete req.session.pendingBooking;
         
         res.json({ 
           success: true, 
-          appointmentId: newAppointment.id,
+          appointmentId,
           paymentId: paymentResult.paymentId,
           paidAmount: paymentResult.amount,
           remainingAmount: paymentResult.remainingAmount,
@@ -276,49 +354,24 @@ app.post('/process-payment', requireAuth, async (req, res) => {
       }
     } else if (paymentType === 'full') {
       // Process full payment
-      console.log('Processing full payment for:', booking.serviceInfo.name);
-      console.log('Amount:', totalAmount / 100);
-      
       paymentResult = await processFullPayment(booking, sourceId, totalAmount);
-      
       if (paymentResult.success) {
-        // Save the appointment with full payment information
-        const appointments = loadAppointments();
-        const user = req.session.user;
-        const userIdentifier = user.username || user.email || user.id;
-        
-        const newAppointment = {
-          id: Date.now(),
-          username: userIdentifier, // Keep for backward compatibility
-          user_id: user.id || user.username, // New field for OAuth users
-          user_email: user.email || '', // For OAuth users
+        // Save the appointment to database (full payment)
+        const appointmentId = await saveAppointment({
+          username: req.session.user.username,
           date: booking.date,
           time: booking.time,
           service: booking.service,
           serviceInfo: booking.serviceInfo,
           status: 'confirmed',
-          paymentStatus: 'full_payment_completed',
-          paymentType: 'full_payment',
-          totalAmount: totalAmount,
-          paidAmount: totalAmount,
-          remainingAmount: 0,
-          paymentData: {
-            paymentId: paymentResult.paymentId,
-            referenceId: paymentResult.referenceId,
-            status: paymentResult.status,
-            createdAt: new Date().toISOString()
-          }
-        };
-        
-        appointments.push(newAppointment);
-        saveAppointments(appointments);
-        
+          paymentId: paymentResult.paymentId,
+          paidAmount: totalAmount
+        });
         // Clear pending booking
         delete req.session.pendingBooking;
-        
         res.json({ 
           success: true, 
-          appointmentId: newAppointment.id,
+          appointmentId,
           paymentId: paymentResult.paymentId,
           paidAmount: totalAmount,
           remainingAmount: 0
@@ -338,17 +391,9 @@ app.post('/process-payment', requireAuth, async (req, res) => {
   }
 });
 
-app.get('/my-appointments', requireAuth, (req, res) => {
-  const appointments = loadAppointments();
-  const user = req.session.user;
-  const userIdentifier = user.username || user.email || user.id;
-  
-  // Filter appointments by both old and new user identification methods
-  const userAppointments = appointments.filter(apt => 
-    apt.username === userIdentifier || 
-    apt.user_id === user.id || 
-    apt.user_email === user.email
-  );
+app.get('/my-appointments', requireAuth, async (req, res) => {
+  const appointments = await loadAppointments();
+  const userAppointments = appointments.filter(apt => apt.username === req.session.user.username);
   
   res.render('my-appointments', { 
     user: req.session.user, 
@@ -357,8 +402,8 @@ app.get('/my-appointments', requireAuth, (req, res) => {
   });
 });
 
-app.get('/admin', requireAuth, requireAdmin, (req, res) => {
-  const appointments = loadAppointments();
+app.get('/admin', requireAuth, requireAdmin, async (req, res) => {
+  const appointments = await loadAppointments();
   res.render('admin', { 
     user: req.session.user, 
     appointments,
@@ -378,6 +423,8 @@ app.get('/logout', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  // Initialize database before starting server
+  await initializeDatabase();
   console.log(`Lyra Beauty app running on http://localhost:${PORT}`);
 });
