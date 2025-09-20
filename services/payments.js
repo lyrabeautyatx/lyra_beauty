@@ -10,6 +10,17 @@ const { paymentsApi, invoicesApi, refundsApi, squareConfig } = require('../confi
  */
 async function processFullPayment(booking, sourceId, amount) {
   try {
+    // Input validation
+    if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+      throw new Error('Invalid booking data provided');
+    }
+    if (!sourceId || typeof sourceId !== 'string') {
+      throw new Error('Valid payment source ID is required');
+    }
+    if (!amount || amount <= 0 || !Number.isInteger(amount)) {
+      throw new Error('Valid payment amount in cents is required');
+    }
+
     const paymentRequest = {
       sourceId: sourceId,
       idempotencyKey: uuidv4(),
@@ -55,6 +66,17 @@ async function processFullPayment(booking, sourceId, amount) {
  */
 async function processDownPayment(booking, sourceId, amount) {
   try {
+    // Input validation
+    if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+      throw new Error('Invalid booking data provided');
+    }
+    if (!sourceId || typeof sourceId !== 'string') {
+      throw new Error('Valid payment source ID is required');
+    }
+    if (!amount || amount <= 0 || !Number.isInteger(amount)) {
+      throw new Error('Valid payment amount in cents is required');
+    }
+
     const downPaymentAmount = Math.round(amount * 0.2); // 20% down payment
     
     const paymentRequest = {
@@ -102,45 +124,71 @@ async function processDownPayment(booking, sourceId, amount) {
  */
 async function createRemainingPaymentInvoice(booking, remainingAmount, downPaymentId) {
   try {
-    const invoiceRequest = {
-      requestMethod: 'CREATE',
-      requestBody: {
-        invoice: {
-          locationId: squareConfig.locationId,
-          invoiceNumber: `INV-${Date.now()}`,
-          title: `Remaining Payment - ${booking.serviceInfo.name}`,
-          description: `Balance payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}. Down payment ID: ${downPaymentId}`,
-          primaryRecipient: {
-            customerId: booking.customerId || null
-          },
-          paymentRequests: [{
-            requestMethod: 'BALANCE',
-            requestType: 'BALANCE'
-          }],
-          deliveryMethod: 'EMAIL',
-          invoiceRequestMethod: 'EMAIL',
-          status: 'DRAFT',
-          orderRequest: {
-            locationId: squareConfig.locationId,
-            order: {
-              locationId: squareConfig.locationId,
-              lineItems: [{
-                name: `Balance for ${booking.serviceInfo.name}`,
-                quantity: '1',
-                basePriceMoney: {
-                  amount: remainingAmount,
-                  currency: 'USD'
-                }
-              }]
-            }
+    // Input validation
+    if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+      throw new Error('Invalid booking data provided');
+    }
+    if (!remainingAmount || remainingAmount <= 0 || !Number.isInteger(remainingAmount)) {
+      throw new Error('Valid remaining amount in cents is required');
+    }
+    if (!downPaymentId || typeof downPaymentId !== 'string') {
+      throw new Error('Valid down payment ID is required');
+    }
+
+    // Create order first for the invoice
+    const orderRequest = {
+      locationId: squareConfig.locationId,
+      order: {
+        locationId: squareConfig.locationId,
+        lineItems: [{
+          name: `Balance for ${booking.serviceInfo.name}`,
+          quantity: '1',
+          basePriceMoney: {
+            amount: remainingAmount,
+            currency: 'USD'
           }
-        }
+        }]
+      }
+    };
+
+    const invoiceRequest = {
+      invoice: {
+        locationId: squareConfig.locationId,
+        invoiceNumber: `INV-${Date.now()}`,
+        title: `Remaining Payment - ${booking.serviceInfo.name}`,
+        description: `Balance payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}. Down payment ID: ${downPaymentId}`,
+        primaryRecipient: {
+          customerId: booking.customerId || undefined
+        },
+        paymentRequests: [{
+          requestMethod: 'BALANCE',
+          requestType: 'BALANCE'
+        }],
+        deliveryMethod: 'EMAIL',
+        invoiceRequestMethod: 'EMAIL',
+        status: 'DRAFT',
+        orderRequest: orderRequest
       }
     };
 
     const response = await invoicesApi.createInvoice(invoiceRequest);
     
     if (response.result && response.result.invoice) {
+      const invoiceId = response.result.invoice.id;
+      
+      // Attempt to publish/send the invoice
+      try {
+        const publishRequest = {
+          requestMethod: 'SEND'
+        };
+        
+        const publishResponse = await invoicesApi.sendInvoice(invoiceId, publishRequest);
+        console.log('Invoice sent successfully:', invoiceId);
+      } catch (publishError) {
+        console.warn('Failed to send invoice automatically:', publishError.message);
+        // Continue without failing - invoice was created successfully
+      }
+      
       return {
         success: true,
         invoiceId: response.result.invoice.id,
@@ -170,6 +218,17 @@ async function createRemainingPaymentInvoice(booking, remainingAmount, downPayme
  */
 async function processRefund(paymentId, refundAmount, reason = 'Appointment cancellation') {
   try {
+    // Input validation
+    if (!paymentId || typeof paymentId !== 'string') {
+      throw new Error('Valid payment ID is required');
+    }
+    if (!refundAmount || refundAmount <= 0 || !Number.isInteger(refundAmount)) {
+      throw new Error('Valid refund amount in cents is required');
+    }
+    if (!reason || typeof reason !== 'string') {
+      throw new Error('Valid refund reason is required');
+    }
+
     const refundRequest = {
       idempotencyKey: uuidv4(),
       amountMoney: {
