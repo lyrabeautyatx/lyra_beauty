@@ -120,11 +120,11 @@ jobs:
           
           # Create environment file
           echo "Creating environment file..."
-          cat > .env << ENV_EOF
-NODE_ENV=production
-PORT=3000
-SESSION_SECRET=lyra_beauty_production_$(date +%s)
-ENV_EOF
+          cat > .env << "ENV_EOF"
+          NODE_ENV=production
+          PORT=3000
+          SESSION_SECRET=lyra_beauty_production_$(date +%s)
+          ENV_EOF
           
           # Create logs directory
           mkdir -p logs
@@ -132,7 +132,7 @@ ENV_EOF
           # Configure nginx if not already done
           if [ ! -f /etc/nginx/conf.d/lyra-beauty.conf ]; then
             echo "Configuring Nginx..."
-            sudo tee /etc/nginx/conf.d/lyra-beauty.conf > /dev/null << EOF
+            sudo tee /etc/nginx/conf.d/lyra-beauty.conf > /dev/null << "EOF"
           server {
               listen 80;
               server_name _;
