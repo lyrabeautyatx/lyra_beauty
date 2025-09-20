@@ -202,7 +202,7 @@ app.get('/', (req, res) => {
 // Public services page (no authentication required)
 app.get('/services', async (req, res) => {
   try {
-    const services = await db.all('SELECT * FROM services WHERE active = 1 ORDER BY price');
+    const services = await db.all('SELECT id, name, price, duration_minutes, description FROM services WHERE active = 1 ORDER BY price');
     res.render('services', { 
       user: req.session.user,
       services: services
