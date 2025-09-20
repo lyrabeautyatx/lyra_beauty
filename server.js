@@ -3,10 +3,15 @@ const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
+const passport = require('./auth/strategies/google');
 const { getDatabase } = require('./database');
 
 // Load environment variables
 require('dotenv').config();
+
+// Import authentication components
+const authRoutes = require('./auth/routes/auth');
+const { requireAuth, requireAdmin } = require('./auth/middleware/auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -146,20 +151,28 @@ async function isSlotAvailable(date, time) {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: 'lyra_secret',
+  secret: process.env.SESSION_SECRET || 'lyra_secret',
   resave: false,
   saveUninitialized: false
 }));
 
-// Authentication middleware
-function requireAuth(req, res, next) {
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+// OAuth routes
+app.use('/auth', authRoutes);
+
+// Legacy authentication middleware (kept for backward compatibility)
+function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();
   res.redirect('/login');
 }
 
-function requireAdmin(req, res, next) {
+function legacyRequireAdmin(req, res, next) {
   if (req.session.user && req.session.user.role === 'admin') return next();
   res.status(403).send('Forbidden');
 }
@@ -261,7 +274,8 @@ app.get('/payment', requireAuth, (req, res) => {
     user: req.session.user,
     booking,
     applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
-    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID' // Replace with your Square Location ID
+    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID', // Replace with your Square Location ID
+    moment
   });
 });
 
@@ -329,6 +343,12 @@ app.get('/admin', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
+  // Use the auth route for OAuth logout if user came from OAuth
+  if (req.user) {
+    return res.redirect('/auth/logout');
+  }
+  
+  // Legacy logout for backward compatibility
   req.session.destroy(() => {
     res.redirect('/');
   });
