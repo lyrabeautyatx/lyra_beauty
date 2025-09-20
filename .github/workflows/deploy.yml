@@ -41,14 +41,25 @@ jobs:
         
         # Test SSH connection first
         echo "Testing SSH connection..."
-        ssh -o BatchMode=yes -o ConnectTimeout=5 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "SSH connection successful" || {
+        echo "Hostname: $HOSTNAME"
+        echo "User: $USER_NAME"
+        
+        # Debug SSH key format
+        echo "SSH key first line:"
+        head -n 1 ~/.ssh/id_rsa
+        echo "SSH key last line:"
+        tail -n 1 ~/.ssh/id_rsa
+        
+        ssh -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "SSH connection successful" || {
           echo "SSH connection failed. Let's debug..."
           echo "Key file permissions:"
           ls -la ~/.ssh/id_rsa
-          echo "Key file first few lines:"
-          head -n 5 ~/.ssh/id_rsa
           echo "Attempting connection with verbose output..."
-          ssh -v -o BatchMode=yes -o ConnectTimeout=10 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "test" 2>&1 | head -n 20
+          ssh -v -o BatchMode=yes -o ConnectTimeout=15 -i ~/.ssh/id_rsa ${USER_NAME}@${HOSTNAME} echo "test" 2>&1 | head -n 30
+          echo "Checking if host is reachable..."
+          ping -c 3 $HOSTNAME || echo "Host unreachable"
+          echo "Checking SSH port..."
+          nc -z -v $HOSTNAME 22 || echo "SSH port not accessible"
           exit 1
         }
         
