@@ -62,7 +62,7 @@
                  data-price="<%= service.price %>" 
                  data-duration="<%= service.duration_minutes %>"
                  data-name="<%= service.name.toLowerCase() %>"
-                 data-description="<%= (service.description || '').toLowerCase() %>">
+                 data-description="<%= (service.description || '').toLowerCase().replace(/"/g, '&quot;').replace(/'/g, '&#39;') %>">
               <div class="service-header">
                 <h3 class="service-name"><%= service.name %></h3>
                 <div class="service-price">$<%= service.price.toFixed(2) %></div>
