@@ -70,6 +70,7 @@ function isSlotAvailable(date, time) {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lyra_secret',
@@ -166,7 +167,8 @@ app.get('/payment', requireAuth, (req, res) => {
     user: req.session.user,
     booking,
     applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
-    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID' // Replace with your Square Location ID
+    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID', // Replace with your Square Location ID
+    moment
   });
 });
 
