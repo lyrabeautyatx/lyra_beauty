@@ -68,6 +68,8 @@ backup-*
 database/*.db
 database/backups/
 *.json.backup.*
+lyra_beauty.db
+*.db
 
 # Deployment files
 deployment/
