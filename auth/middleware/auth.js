@@ -128,11 +128,118 @@ function checkPermission(permission) {
     
     const permissions = userService.getUserPermissions(user);
     
-    if (permissions.includes(permission)) {
+    // Check if permission exists in the actions array or directly in permissions (for backward compatibility)
+    if (
+      (permissions && Array.isArray(permissions) && permissions.includes(permission)) ||
+      (permissions && permissions.actions && Array.isArray(permissions.actions) && permissions.actions.includes(permission))
+    ) {
       return next();
     }
     
     res.status(403).json({ error: 'Permission denied' });
+  };
+}
+
+// Specific role middleware functions for cleaner route protection
+function requireCustomer(req, res, next) {
+  const user = req.user || req.session.user;
+  
+  if (!user) {
+    return res.redirect('/login');
+  }
+  
+  if (user.role === 'customer' || user.role === 'admin') {
+    return next();
+  }
+  
+  // Handle different response types
+  if (req.accepts('json') && !req.accepts('html')) {
+    return res.status(403).json({ error: 'Customer access required' });
+  }
+  
+  res.status(403).send('Customer access required');
+}
+
+function requirePartner(req, res, next) {
+  const user = req.user || req.session.user;
+  
+  if (!user) {
+    return res.redirect('/login');
+  }
+  
+  if (user.role === 'partner' || user.role === 'admin') {
+    return next();
+  }
+  
+  // Handle different response types
+  if (req.accepts('json') && !req.accepts('html')) {
+    return res.status(403).json({ error: 'Partner access required' });
+  }
+  
+  res.status(403).send('Partner access required');
+}
+
+// Business rule: Partners cannot book appointments
+function blockPartnerBooking(req, res, next) {
+  const user = req.user || req.session.user;
+  
+  if (!user) {
+    return res.redirect('/login');
+  }
+  
+  // Block partners from accessing booking routes
+  if (user.role === 'partner') {
+    if (req.accepts('json') && !req.accepts('html')) {
+      return res.status(403).json({ 
+        error: 'Partners cannot book appointments. Please contact admin to change your role to customer.' 
+      });
+    }
+    return res.status(403).send('Partners cannot book appointments. Please contact admin to change your role to customer.');
+  }
+  
+  // Allow customers and admins
+  if (user.role === 'customer' || user.role === 'admin') {
+    return next();
+  }
+  
+  // Fallback for unknown roles
+  res.status(403).send('Insufficient permissions');
+}
+
+// Enhanced role checking with better error handling
+function requireAnyRole(roles) {
+  return (req, res, next) => {
+    const user = req.user || req.session.user;
+    
+    if (!user) {
+      if (req.accepts('json') && !req.accepts('html')) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      return res.redirect('/login');
+    }
+    
+    // Admin has access to everything
+    if (user.role === 'admin') {
+      return next();
+    }
+    
+    // Check if user role is in allowed roles
+    if (Array.isArray(roles) && roles.includes(user.role)) {
+      return next();
+    }
+    
+    if (typeof roles === 'string' && user.role === roles) {
+      return next();
+    }
+    
+    // Handle different response types for unauthorized access
+    if (req.accepts('json') && !req.accepts('html')) {
+      return res.status(403).json({ 
+        error: `Access denied. Required role(s): ${Array.isArray(roles) ? roles.join(', ') : roles}` 
+      });
+    }
+    
+    res.status(403).send(`Access denied. Required role(s): ${Array.isArray(roles) ? roles.join(', ') : roles}`);
   };
 }
 
@@ -165,6 +272,10 @@ module.exports = {
   requireAuth,
   requireRole,
   requireAdmin,
+  requireCustomer,
+  requirePartner,
+  blockPartnerBooking,
+  requireAnyRole,
   generateJWT,
   refreshJWT,
   verifyJWT,
