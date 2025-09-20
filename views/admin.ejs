@@ -10,7 +10,15 @@
     <h2>Admin Panel</h2>
     <p>Welcome, <%= user.username %> (Admin)!</p>
     
-    <h3>All Appointments</h3>
+    <!-- Navigation Tabs -->
+    <div class="admin-nav">
+      <button class="nav-tab active" onclick="showTab('appointments')">Appointments</button>
+      <button class="nav-tab" onclick="showTab('services')">Service Management</button>
+    </div>
+    
+    <!-- Appointments Tab -->
+    <div id="appointments-tab" class="tab-content active">
+      <h3>All Appointments</h3>
     <% if (appointments.length > 0) { %>
       <div class="appointments-list">
         <% appointments.forEach(appointment => { %>
@@ -29,8 +37,138 @@
     <% } else { %>
       <p>No appointments scheduled.</p>
     <% } %>
+    </div>
+    
+    <!-- Services Tab -->
+    <div id="services-tab" class="tab-content" style="display: none;">
+      <h3>Service Management</h3>
+      
+      <!-- Add New Service Button -->
+      <button class="btn btn-primary" onclick="showAddServiceForm()">Add New Service</button>
+      
+      <!-- Add Service Form (initially hidden) -->
+      <div id="add-service-form" class="form-container" style="display: none;">
+        <h4>Add New Service</h4>
+        <form id="service-form">
+          <div class="form-group">
+            <label for="service_key">Service Key:</label>
+            <input type="text" id="service_key" name="service_key" required 
+                   placeholder="e.g., microblading" pattern="[a-zA-Z0-9_]+"
+                   title="Only letters, numbers, and underscores allowed">
+          </div>
+          
+          <div class="form-group">
+            <label for="name">Service Name:</label>
+            <input type="text" id="name" name="name" required placeholder="e.g., Microblading">
+          </div>
+          
+          <div class="form-group">
+            <label for="price">Price ($):</label>
+            <input type="number" id="price" name="price" required min="0" max="10000" step="0.01" placeholder="350.00">
+          </div>
+          
+          <div class="form-group">
+            <label for="duration_minutes">Duration (minutes):</label>
+            <input type="number" id="duration_minutes" name="duration_minutes" min="15" max="480" placeholder="120">
+          </div>
+          
+          <div class="form-group">
+            <label for="description">Description:</label>
+            <textarea id="description" name="description" rows="3" placeholder="Service description..."></textarea>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Save Service</button>
+            <button type="button" class="btn btn-secondary" onclick="hideServiceForm()">Cancel</button>
+          </div>
+        </form>
+      </div>
+      
+      <!-- Services List -->
+      <div id="services-list" class="services-list">
+        <p>Loading services...</p>
+      </div>
+      
+      <!-- Edit Service Modal (initially hidden) -->
+      <div id="edit-service-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+          <span class="close" onclick="hideEditServiceModal()">&times;</span>
+          <h4>Edit Service</h4>
+          <form id="edit-service-form">
+            <input type="hidden" id="edit-service-id" name="id">
+            
+            <div class="form-group">
+              <label for="edit-service_key">Service Key:</label>
+              <input type="text" id="edit-service_key" name="service_key" required 
+                     pattern="[a-zA-Z0-9_]+" title="Only letters, numbers, and underscores allowed">
+            </div>
+            
+            <div class="form-group">
+              <label for="edit-name">Service Name:</label>
+              <input type="text" id="edit-name" name="name" required>
+            </div>
+            
+            <div class="form-group">
+              <label for="edit-price">Price ($):</label>
+              <input type="number" id="edit-price" name="price" required min="0" max="10000" step="0.01">
+            </div>
+            
+            <div class="form-group">
+              <label for="edit-duration_minutes">Duration (minutes):</label>
+              <input type="number" id="edit-duration_minutes" name="duration_minutes" min="15" max="480">
+            </div>
+            
+            <div class="form-group">
+              <label for="edit-description">Description:</label>
+              <textarea id="edit-description" name="description" rows="3"></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label>
+                <input type="checkbox" id="edit-active" name="active"> Active
+              </label>
+            </div>
+            
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Update Service</button>
+              <button type="button" class="btn btn-secondary" onclick="hideEditServiceModal()">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
     
     <a href="/dashboard">User Dashboard</a> | <a href="/logout">Logout</a>
   </div>
+
+  <!-- JavaScript for service management -->
+  <script src="/js/admin-services.js"></script>
+  <script>
+    // Tab navigation
+    function showTab(tabName) {
+      // Hide all tabs
+      document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.style.display = 'none';
+        tab.classList.remove('active');
+      });
+      
+      // Remove active class from all nav buttons
+      document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      
+      // Show selected tab
+      document.getElementById(tabName + '-tab').style.display = 'block';
+      document.getElementById(tabName + '-tab').classList.add('active');
+      
+      // Add active class to clicked button
+      event.target.classList.add('active');
+      
+      // Load services if services tab is selected
+      if (tabName === 'services') {
+        loadServices();
+      }
+    }
+  </script>
 </body>
 </html>
