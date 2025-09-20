@@ -12,6 +12,13 @@ router.get('/google', (req, res, next) => {
   if (!isOAuthConfigured) {
     return res.status(503).json({ error: 'Google OAuth is not configured' });
   }
+  
+  // Check if we have the google strategy available
+  const googleStrategy = passport._strategy('google');
+  if (!googleStrategy) {
+    return res.status(503).json({ error: 'Google OAuth strategy not available' });
+  }
+  
   passport.authenticate('google', {
     scope: ['profile', 'email']
   })(req, res, next);
