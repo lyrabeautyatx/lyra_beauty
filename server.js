@@ -3,14 +3,23 @@ const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
+const passport = require('./auth/strategies/google');
 
 // Load environment variables
 require('dotenv').config();
 
+// Import authentication components
+const authRoutes = require('./auth/routes/auth');
+const { requireAuth, requireAdmin } = require('./auth/middleware/auth');
+const userService = require('./services/user');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Hardcoded users
+// Initialize user service
+userService.initializeUsers();
+
+// Legacy hardcoded users (kept for backward compatibility during transition)
 const users = [
   { username: 'user1', password: 'pass1', role: 'user' },
   { username: 'admin', password: 'adminpass', role: 'admin' }
@@ -63,18 +72,25 @@ app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: 'lyra_secret',
+  secret: process.env.SESSION_SECRET || 'lyra_secret',
   resave: false,
   saveUninitialized: false
 }));
 
-// Authentication middleware
-function requireAuth(req, res, next) {
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+// OAuth routes
+app.use('/auth', authRoutes);
+
+// Legacy authentication middleware (kept for backward compatibility)
+function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();
   res.redirect('/login');
 }
 
-function requireAdmin(req, res, next) {
+function legacyRequireAdmin(req, res, next) {
   if (req.session.user && req.session.user.role === 'admin') return next();
   res.status(403).send('Forbidden');
 }
@@ -174,9 +190,14 @@ app.post('/process-payment', requireAuth, async (req, res) => {
     if (paymentSuccess) {
       // Save the appointment
       const appointments = loadAppointments();
+      const user = req.session.user;
+      const userIdentifier = user.username || user.email || user.id;
+      
       const newAppointment = {
         id: Date.now(),
-        username: req.session.user.username,
+        username: userIdentifier, // Keep for backward compatibility
+        user_id: user.id || user.username, // New field for OAuth users
+        user_email: user.email || '', // For OAuth users
         date: booking.date,
         time: booking.time,
         service: booking.service,
@@ -204,7 +225,15 @@ app.post('/process-payment', requireAuth, async (req, res) => {
 
 app.get('/my-appointments', requireAuth, (req, res) => {
   const appointments = loadAppointments();
-  const userAppointments = appointments.filter(apt => apt.username === req.session.user.username);
+  const user = req.session.user;
+  const userIdentifier = user.username || user.email || user.id;
+  
+  // Filter appointments by both old and new user identification methods
+  const userAppointments = appointments.filter(apt => 
+    apt.username === userIdentifier || 
+    apt.user_id === user.id || 
+    apt.user_email === user.email
+  );
   
   res.render('my-appointments', { 
     user: req.session.user, 
@@ -223,6 +252,12 @@ app.get('/admin', requireAuth, requireAdmin, (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
+  // Use the auth route for OAuth logout if user came from OAuth
+  if (req.user) {
+    return res.redirect('/auth/logout');
+  }
+  
+  // Legacy logout for backward compatibility
   req.session.destroy(() => {
     res.redirect('/');
   });
