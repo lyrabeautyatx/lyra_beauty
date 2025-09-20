@@ -146,7 +146,9 @@ async function handlePaymentCreated(payment) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       payment.id,
-      null, // Will be updated when we link to appointment
+      // TODO: appointment_id is currently set to null because payment may be received before an appointment is linked.
+      // Update this value when the payment is associated with an appointment (see issue tracker or appointment linking logic).
+      null,
       payment.amount_money?.amount || 0,
       'square_payment',
       payment.status,
