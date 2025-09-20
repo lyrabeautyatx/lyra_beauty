@@ -1,0 +1,33 @@
+name: Simple Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Deploy to Server
+      env:
+        PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+        HOST: ${{ secrets.EC2_HOST }}
+      run: |
+        # Setup SSH
+        mkdir -p ~/.ssh
+        echo "$PRIVATE_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        
+        # Copy files and deploy
+        scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -r . ec2-user@$HOST:/tmp/app/
+        
+        # Run deployment on server
+        ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no ec2-user@$HOST '
+          cd /tmp/app
+          npm install --production
+          pm2 restart lyra-beauty || pm2 start server.js --name lyra-beauty
+        '

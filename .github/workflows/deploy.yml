@@ -1,8 +1,8 @@
-name: Deploy to AWS EC2
+name: Deploy to AWS EC2 (COMPLEX - DISABLED)
 
 on:
-  push:
-    branches: [ main ]
+  # Disabled - using simple-deploy.yml instead
+  workflow_dispatch:
 
 jobs:
   deploy:
