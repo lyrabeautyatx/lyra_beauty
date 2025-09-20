@@ -36,7 +36,8 @@ jobs:
       run: |
         # Create deployment package
         mkdir -p deployment
-        cp -r . deployment/
+        # Copy files excluding the deployment directory itself
+        find . -maxdepth 1 -not -name . -not -name deployment -exec cp -r {} deployment/ \;
         cd deployment
         rm -rf node_modules .git .github deployment
         npm install --production
