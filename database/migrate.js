@@ -1,189 +1,342 @@
-const { getDatabase } = require('./index');
+const { getDatabase } = require('../database');
 const fs = require('fs');
 const path = require('path');
 
-async function runMigration() {
-  console.log('🚀 Starting database migration...');
-  
-  try {
-    const db = getDatabase();
-    await db.connect();
-    
-    // Read and execute schema
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    const schema = fs.readFileSync(schemaPath, 'utf8');
-    
-    // Execute schema as individual statements
-    console.log('📋 Executing schema statements...');
-    
-    // Split by statements, being careful with triggers
-    const statements = [];
-    let currentStatement = '';
-    let inTrigger = false;
-    
-    const lines = schema.split('\n');
-    for (const line of lines) {
-      const trimmedLine = line.trim();
+class DataMigration {
+  constructor() {
+    this.db = getDatabase();
+    this.appointmentsFile = path.join(__dirname, '../appointments.json');
+  }
+
+  async run() {
+    try {
+      console.log('🚀 Starting enhanced data migration...');
       
-      // Skip empty lines and comments
-      if (!trimmedLine || trimmedLine.startsWith('--')) {
-        continue;
-      }
+      // Step 1: Connect to database (this will create tables via initializeTables)
+      await this.db.connect();
       
-      currentStatement += line + '\n';
+      // Step 2: Populate services table with enhanced data
+      await this.populateServices();
       
-      // Check if we're entering a trigger
-      if (trimmedLine.toUpperCase().includes('CREATE TRIGGER')) {
-        inTrigger = true;
-      }
+      // Step 3: Migrate appointments data from JSON
+      await this.migrateAppointments();
       
-      // Check if we're ending a trigger or regular statement
-      if (trimmedLine.endsWith(';')) {
-        if (inTrigger && trimmedLine.toUpperCase() === 'END;') {
-          // End of trigger
-          statements.push(currentStatement.trim());
-          currentStatement = '';
-          inTrigger = false;
-        } else if (!inTrigger) {
-          // Regular statement
-          statements.push(currentStatement.trim());
-          currentStatement = '';
-        }
-        // If in trigger but not END;, continue accumulating
-      }
+      // Step 4: Validate migrated data
+      await this.validateMigration();
+      
+      console.log('✅ Enhanced data migration completed successfully!');
+      return true;
+    } catch (error) {
+      console.error('❌ Migration failed:', error);
+      throw error;
     }
+  }
+
+  async populateServices() {
+    console.log('\n💄 Populating services table with enhanced data...');
     
-    // Add any remaining statement
-    if (currentStatement.trim()) {
-      statements.push(currentStatement.trim());
-    }
-    
-    for (const statement of statements) {
-      if (statement) {
-        try {
-          await db.run(statement);
-        } catch (error) {
-          console.error('Error executing statement:', statement.substring(0, 100) + '...');
-          throw error;
-        }
-      }
-    }
-    
-    console.log('✅ Schema created successfully');
-    
-    // Insert default services
-    console.log('💅 Inserting default services...');
+    // Enhanced service data with duration and descriptions
     const services = [
       {
-        name: 'Microblading',
         service_key: 'microblading',
+        name: 'Microblading',
         price: 350.00,
         duration_minutes: 180,
-        description: 'Semi-permanent eyebrow technique using fine strokes'
+        description: 'Semi-permanent eyebrow technique using fine hair-like strokes'
       },
       {
-        name: 'Microshading',
         service_key: 'microshading',
+        name: 'Microshading',
         price: 300.00,
         duration_minutes: 150,
         description: 'Semi-permanent eyebrow technique using powder/ombre effect'
       },
       {
-        name: 'Lip Glow',
         service_key: 'lipglow',
+        name: 'Lip Glow',
         price: 200.00,
         duration_minutes: 120,
-        description: 'Semi-permanent lip enhancement for natural color'
+        description: 'Semi-permanent lip enhancement for natural color boost'
       },
       {
-        name: 'Brow Mapping',
         service_key: 'browmapping',
+        name: 'Brow Mapping',
         price: 150.00,
         duration_minutes: 60,
-        description: 'Professional eyebrow shaping and mapping service'
+        description: 'Professional eyebrow shaping and mapping consultation'
       }
     ];
-    
+
     for (const service of services) {
-      // Check if service already exists
-      const existing = await db.get(
-        'SELECT id FROM services WHERE service_key = ?',
-        [service.service_key]
-      );
-      
-      if (!existing) {
-        await db.run(
-          `INSERT INTO services (name, service_key, price, duration_minutes, description, active)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [service.name, service.service_key, service.price, service.duration_minutes, service.description, true]
+      try {
+        // Check if service already exists
+        const existing = await this.db.get(
+          'SELECT * FROM services WHERE service_key = ?',
+          [service.service_key]
         );
-        console.log(`   ✓ Added service: ${service.name}`);
-      } else {
-        console.log(`   - Service already exists: ${service.name}`);
+
+        if (existing) {
+          // Update existing service with enhanced data
+          await this.db.run(`
+            UPDATE services 
+            SET duration_minutes = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE service_key = ?
+          `, [service.duration_minutes, service.description, service.service_key]);
+          console.log(`✓ Updated service "${service.name}" with enhanced data`);
+        } else {
+          // Insert new service
+          const result = await this.db.run(`
+            INSERT INTO services (service_key, name, price, duration_minutes, description, active)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `, [
+            service.service_key,
+            service.name,
+            service.price,
+            service.duration_minutes,
+            service.description,
+            true
+          ]);
+          console.log(`✓ Created service "${service.name}" (ID: ${result.id}) - $${service.price}`);
+        }
+      } catch (error) {
+        console.error(`Error processing service "${service.name}":`, error);
+        throw error;
       }
     }
+  }
+
+  async migrateAppointments() {
+    console.log('\n📅 Migrating appointments data from JSON...');
     
-    // Insert default admin user
-    console.log('👤 Creating default admin user...');
-    const existingAdmin = await db.get(
-      'SELECT id FROM users WHERE role = ? AND username = ?',
-      ['admin', 'admin']
-    );
-    
-    if (!existingAdmin) {
-      await db.run(
-        `INSERT INTO users (username, password, email, first_name, last_name, role, has_used_coupon)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ['admin', 'adminpass', 'admin@lyrabeautyatx.com', 'Admin', 'User', 'admin', false]
-      );
-      console.log('   ✓ Default admin user created (username: admin, password: adminpass)');
-    } else {
-      console.log('   - Admin user already exists');
+    try {
+      // Check if appointments.json exists
+      if (!fs.existsSync(this.appointmentsFile)) {
+        console.log('ℹ️  No appointments.json file found - skipping appointment migration');
+        return;
+      }
+
+      // Load existing appointments
+      const appointmentsData = fs.readFileSync(this.appointmentsFile, 'utf8');
+      const appointments = JSON.parse(appointmentsData);
+
+      if (!appointments || appointments.length === 0) {
+        console.log('ℹ️  No appointments to migrate');
+        return;
+      }
+
+      console.log(`Found ${appointments.length} appointments to migrate`);
+
+      // Create legacy users for existing appointments
+      const legacyUsers = new Set();
+      appointments.forEach(apt => {
+        if (apt.username) {
+          legacyUsers.add(apt.username);
+        }
+      });
+
+      // Create users for legacy appointments
+      for (const username of legacyUsers) {
+        await this.createLegacyUser(username);
+      }
+
+      // Migrate each appointment
+      let migratedCount = 0;
+      let skippedCount = 0;
+      for (const apt of appointments) {
+        try {
+          const result = await this.migrateAppointment(apt);
+          if (result) {
+            migratedCount++;
+          } else {
+            skippedCount++;
+          }
+        } catch (error) {
+          console.error(`Error migrating appointment ${apt.id}:`, error);
+          skippedCount++;
+        }
+      }
+
+      console.log(`✅ Migration summary: ${migratedCount} migrated, ${skippedCount} skipped`);
+    } catch (error) {
+      console.error('Error migrating appointments:', error);
+      throw error;
     }
+  }
+
+  async createLegacyUser(username) {
+    try {
+      // Check if user already exists
+      const existing = await this.db.get(
+        'SELECT * FROM users WHERE username = ?',
+        [username]
+      );
+
+      if (existing) {
+        return existing.id;
+      }
+
+      // Create legacy user
+      const result = await this.db.run(`
+        INSERT INTO users (
+          first_name, last_name, username, password, 
+          email, role, partner_status, has_used_coupon
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        'Legacy',
+        'User',
+        username,
+        '', // No password for legacy users
+        `${username}@legacy.local`,
+        'customer',
+        null,
+        false
+      ]);
+
+      console.log(`✓ Created legacy user: ${username} (ID: ${result.id})`);
+      return result.id;
+    } catch (error) {
+      console.error(`Error creating legacy user ${username}:`, error);
+      throw error;
+    }
+  }
+
+  async migrateAppointment(appointment) {
+    try {
+      // Get user ID
+      const user = await this.db.get(
+        'SELECT id FROM users WHERE username = ?',
+        [appointment.username]
+      );
+
+      if (!user) {
+        throw new Error(`User not found: ${appointment.username}`);
+      }
+
+      // Map legacy service names to service keys
+      const serviceMapping = {
+        'haircut': 'microblading', // Legacy mapping
+        'microblading': 'microblading',
+        'microshading': 'microshading',
+        'lipglow': 'lipglow',
+        'browmapping': 'browmapping'
+      };
+
+      const serviceKey = serviceMapping[appointment.service] || appointment.service;
+
+      // Get service ID
+      const service = await this.db.get(
+        'SELECT id FROM services WHERE service_key = ?',
+        [serviceKey]
+      );
+
+      if (!service) {
+        throw new Error(`Service not found: ${serviceKey}`);
+      }
+
+      // Check if appointment already exists (avoid duplicates)
+      const existing = await this.db.get(
+        'SELECT id FROM appointments WHERE user_id = ? AND service_id = ? AND date = ? AND time = ?',
+        [user.id, service.id, appointment.date, appointment.time]
+      );
+
+      if (existing) {
+        console.log(`✓ Appointment already exists: ${appointment.username} on ${appointment.date} at ${appointment.time}`);
+        return false; // Skipped
+      }
+
+      // Insert appointment
+      const result = await this.db.run(`
+        INSERT INTO appointments (
+          user_id, service_id, date, time, status, payment_id, paid_amount
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [
+        user.id,
+        service.id,
+        appointment.date,
+        appointment.time,
+        appointment.status || 'confirmed',
+        appointment.paymentId || null,
+        appointment.paidAmount || null
+      ]);
+
+      console.log(`✓ Migrated appointment: ${appointment.username} - ${serviceKey} on ${appointment.date} at ${appointment.time}`);
+      return true; // Migrated
+    } catch (error) {
+      console.error(`Error migrating appointment:`, error);
+      throw error;
+    }
+  }
+
+  async validateMigration() {
+    console.log('\n🔍 Validating migrated data...');
     
-    // Verify tables were created
-    console.log('🔍 Verifying database structure...');
-    const tables = await db.all(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-    );
-    
-    console.log('   📊 Tables created:', tables.map(t => t.name).join(', '));
-    
-    // Check constraints and indexes
-    const userIndexes = await db.all(
-      "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='users'"
-    );
-    const serviceIndexes = await db.all(
-      "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='services'"
-    );
-    
-    console.log('   📈 User indexes:', userIndexes.map(i => i.name).join(', '));
-    console.log('   📈 Service indexes:', serviceIndexes.map(i => i.name).join(', '));
-    
-    // Test basic operations
-    console.log('🧪 Testing database operations...');
-    const userCount = await db.get('SELECT COUNT(*) as count FROM users');
-    const serviceCount = await db.get('SELECT COUNT(*) as count FROM services');
-    
-    console.log(`   👥 Users in database: ${userCount.count}`);
-    console.log(`   💅 Services in database: ${serviceCount.count}`);
-    
-    console.log('🎉 Database migration completed successfully!');
-    
-  } catch (error) {
-    console.error('❌ Migration failed:', error);
-    process.exit(1);
+    try {
+      // Count records in each table
+      const userCount = await this.db.get('SELECT COUNT(*) as count FROM users');
+      const serviceCount = await this.db.get('SELECT COUNT(*) as count FROM services');
+      const appointmentCount = await this.db.get('SELECT COUNT(*) as count FROM appointments');
+
+      console.log(`✓ Users: ${userCount.count}`);
+      console.log(`✓ Services: ${serviceCount.count}`);
+      console.log(`✓ Appointments: ${appointmentCount.count}`);
+
+      // Validate relationships
+      const orphanedAppointments = await this.db.all(`
+        SELECT a.id 
+        FROM appointments a 
+        LEFT JOIN users u ON a.user_id = u.id 
+        LEFT JOIN services s ON a.service_id = s.id 
+        WHERE u.id IS NULL OR s.id IS NULL
+      `);
+
+      if (orphanedAppointments.length > 0) {
+        console.warn(`⚠️  Found ${orphanedAppointments.length} orphaned appointments`);
+      } else {
+        console.log('✓ All appointments have valid user and service references');
+      }
+
+      // Check admin user exists
+      const adminUser = await this.db.get('SELECT * FROM users WHERE role = ?', ['admin']);
+      if (adminUser) {
+        console.log(`✓ Admin user exists: ${adminUser.username}`);
+      } else {
+        console.warn('⚠️  No admin user found');
+      }
+
+      // Test appointment loading logic (compatibility with server.js)
+      const sampleAppointment = await this.db.get(`
+        SELECT a.*, u.username, s.service_key, s.name as service_name, s.price as service_price
+        FROM appointments a
+        LEFT JOIN users u ON a.user_id = u.id
+        LEFT JOIN services s ON a.service_id = s.id
+        LIMIT 1
+      `);
+
+      if (sampleAppointment) {
+        console.log(`✓ Appointment loading query test passed`);
+        console.log(`  Sample: ${sampleAppointment.username} - ${sampleAppointment.service_name}`);
+      }
+
+      console.log('✅ Data validation completed');
+    } catch (error) {
+      console.error('Error validating migration:', error);
+      throw error;
+    }
   }
 }
 
 // Run migration if called directly
 if (require.main === module) {
-  runMigration()
-    .then(() => process.exit(0))
-    .catch(err => {
-      console.error('Migration error:', err);
+  const migration = new DataMigration();
+  migration.run()
+    .then(() => {
+      console.log('\n🎉 Enhanced migration completed successfully!');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('\n💥 Migration failed:', error);
       process.exit(1);
     });
 }
 
-module.exports = { runMigration };
+module.exports = { DataMigration };

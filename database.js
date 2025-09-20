@@ -17,7 +17,7 @@ class Database {
       }
 
       // Use in-memory database for development/testing if DATABASE_PATH not set
-      const dbPath = process.env.DATABASE_PATH || ':memory:';
+      const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'lyra_beauty.db');
       
       this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
@@ -26,7 +26,10 @@ class Database {
         } else {
           console.log('Connected to SQLite database:', dbPath);
           this.ready = true;
-          this.initializeTables().then(resolve).catch(reject);
+          // Enable foreign keys
+          this.run('PRAGMA foreign_keys = ON').then(() => {
+            this.initializeTables().then(resolve).catch(reject);
+          }).catch(reject);
         }
       });
     });
@@ -58,11 +61,134 @@ class Database {
           reject(err);
         } else {
           console.log('Users table initialized');
-          // Create default admin user for testing
-          this.createDefaultUsers().then(resolve).catch(reject);
+          // Create additional tables needed for migration compatibility
+          this.createAdditionalTables().then(() => {
+            this.createDefaultUsers().then(resolve).catch(reject);
+          }).catch(reject);
         }
       });
     });
+  }
+
+  async createAdditionalTables() {
+    const tables = [
+      // Services table
+      `CREATE TABLE IF NOT EXISTS services (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        service_key TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        duration_minutes INTEGER DEFAULT 60,
+        description TEXT,
+        active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+      
+      // Appointments table
+      `CREATE TABLE IF NOT EXISTS appointments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        service_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        time TEXT NOT NULL,
+        status TEXT DEFAULT 'confirmed',
+        payment_id TEXT,
+        paid_amount INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (service_id) REFERENCES services(id)
+      )`,
+      
+      // Payments table for webhook tracking
+      `CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        square_payment_id TEXT UNIQUE,
+        appointment_id INTEGER,
+        amount INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (appointment_id) REFERENCES appointments (id)
+      )`,
+      
+      // Coupons table
+      `CREATE TABLE IF NOT EXISTS coupons (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        partner_id INTEGER NOT NULL,
+        code TEXT UNIQUE NOT NULL,
+        discount_percentage INTEGER NOT NULL DEFAULT 10,
+        active BOOLEAN DEFAULT TRUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (partner_id) REFERENCES users(id)
+      )`,
+      
+      // Coupon usage table
+      `CREATE TABLE IF NOT EXISTS coupon_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coupon_id INTEGER NOT NULL,
+        customer_id INTEGER NOT NULL,
+        appointment_id INTEGER NOT NULL,
+        used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (coupon_id) REFERENCES coupons(id),
+        FOREIGN KEY (customer_id) REFERENCES users(id),
+        FOREIGN KEY (appointment_id) REFERENCES appointments(id),
+        UNIQUE(coupon_id, customer_id)
+      )`,
+      
+      // Partner commissions table
+      `CREATE TABLE IF NOT EXISTS partner_commissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        partner_id INTEGER NOT NULL,
+        appointment_id INTEGER NOT NULL,
+        commission_amount DECIMAL(10,2) NOT NULL,
+        status TEXT DEFAULT 'pending',
+        paid_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (partner_id) REFERENCES users(id),
+        FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+      )`
+    ];
+
+    for (const tableSQL of tables) {
+      await new Promise((resolve, reject) => {
+        this.db.run(tableSQL, (err) => {
+          if (err) {
+            console.error('Error creating table:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+
+    // Create indexes for performance
+    const indexes = [
+      'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)',
+      'CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)',
+      'CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)',
+      'CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(date)',
+      'CREATE INDEX IF NOT EXISTS idx_services_key ON services(service_key)',
+      'CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code)'
+    ];
+
+    for (const indexSQL of indexes) {
+      await new Promise((resolve, reject) => {
+        this.db.run(indexSQL, (err) => {
+          if (err) {
+            console.error('Error creating index:', err);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
   }
 
   async createDefaultUsers() {
@@ -78,7 +204,7 @@ class Database {
           // Create default admin user
           const insertAdmin = `
             INSERT INTO users (username, password, email, first_name, last_name, role)
-            VALUES ('admin', 'adminpass', 'admin@lyrabeauty.com', 'Admin', 'User', 'admin')
+            VALUES ('admin', 'admin123', 'admin@lyrabeautyatx.com', 'Admin', 'User', 'admin')
           `;
           
           this.db.run(insertAdmin, (err) => {

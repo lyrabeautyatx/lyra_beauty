@@ -1,259 +1,376 @@
-const { paymentsApi, ordersApi, invoicesApi } = require('./square');
-const { v4: uuidv4 } = require('uuid');
+const { SquareClient, SquareEnvironment } = require('square');
+const { randomUUID } = require('crypto');
+const { getDatabase } = require('../database');
 
-/**
- * Calculate down payment amount (20% of total)
- * @param {number} totalAmount - Total amount in cents
- * @returns {number} Down payment amount in cents
- */
+// Initialize Square client only if credentials are available
+let squareClient, paymentsApi, invoicesApi;
+
+try {
+  const squareEnvironment = process.env.SQUARE_ENVIRONMENT === 'production' 
+    ? SquareEnvironment.Production 
+    : SquareEnvironment.Sandbox;
+
+  if (process.env.SQUARE_ACCESS_TOKEN) {
+    squareClient = new SquareClient({
+      accessToken: process.env.SQUARE_ACCESS_TOKEN,
+      environment: squareEnvironment
+    });
+
+    ({ paymentsApi, invoicesApi } = squareClient);
+    console.log('Square client initialized successfully');
+  } else {
+    console.warn('Square credentials not configured - payment functions will be placeholders');
+  }
+} catch (error) {
+  console.warn('Square SDK initialization failed:', error.message);
+}
+
+// Calculate down payment (20% of total)
 function calculateDownPayment(totalAmount) {
-  return Math.round(totalAmount * 0.2);
+  if (!totalAmount || totalAmount <= 0) {
+    throw new Error('Valid total amount is required for down payment calculation');
+  }
+  return Math.floor(totalAmount * 0.20);
 }
 
-/**
- * Calculate remaining payment amount (80% of total)
- * @param {number} totalAmount - Total amount in cents
- * @returns {number} Remaining payment amount in cents
- */
+// Calculate remaining payment (80% of total)
 function calculateRemainingPayment(totalAmount) {
-  return totalAmount - calculateDownPayment(totalAmount);
+  if (!totalAmount || totalAmount <= 0) {
+    throw new Error('Valid total amount is required for remaining payment calculation');
+  }
+  const downPayment = calculateDownPayment(totalAmount);
+  return totalAmount - downPayment;
 }
 
-/**
- * Get service pricing information
- * @returns {Object} Service pricing data in cents for Square
- */
-async function getServicePricing() {
-  return {
-    'microblading': { name: 'Microblading', price: 35000 }, // $350.00
-    'microshading': { name: 'Microshading', price: 30000 }, // $300.00
-    'lipglow': { name: 'Lip Glow', price: 20000 }, // $200.00
-    'browmapping': { name: 'Brow Mapping', price: 15000 }  // $150.00
-  };
-}
-
-/**
- * Process down payment (20% of total) using Square
- * @param {Object} booking - Booking details
- * @param {string} sourceId - Square payment source ID
- * @param {number} totalAmount - Total service amount in cents
- * @returns {Promise<Object>} Payment result
- */
+// Process down payment (20% of service cost)
 async function processDownPayment(booking, sourceId, totalAmount) {
-  try {
+  // Input validation
+  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+    throw new Error('Invalid booking data provided');
+  }
+  if (!totalAmount || totalAmount <= 0 || !Number.isInteger(totalAmount)) {
+    throw new Error('Valid payment amount in cents is required');
+  }
+
+  if (!paymentsApi) {
+    console.log('Square API not configured - using placeholder for down payment');
     const downPaymentAmount = calculateDownPayment(totalAmount);
-    const idempotencyKey = uuidv4();
+    return {
+      success: true,
+      paymentId: `placeholder_${Date.now()}`,
+      amount: downPaymentAmount,
+      remainingAmount: calculateRemainingPayment(totalAmount),
+      status: 'COMPLETED'
+    };
+  }
+
+  const downPaymentAmount = calculateDownPayment(totalAmount);
+  const remainingAmount = calculateRemainingPayment(totalAmount);
+
+  try {
+    const idempotencyKey = randomUUID();
     
-    const paymentRequest = {
-      sourceId: sourceId,
-      idempotencyKey: idempotencyKey,
+    const payment = {
+      sourceId,
       amountMoney: {
         amount: downPaymentAmount,
         currency: 'USD'
       },
-      note: `Down payment for ${booking.service} on ${booking.date} at ${booking.time}`,
-      locationId: process.env.SQUARE_LOCATION_ID
+      idempotencyKey,
+      locationId: process.env.SQUARE_LOCATION_ID,
+      note: `Down payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
+      referenceId: `down_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
     };
-    
+
     console.log('Processing down payment:', {
       amount: downPaymentAmount,
-      service: booking.service,
-      date: booking.date
+      service: booking.serviceInfo.name,
+      date: booking.date,
+      time: booking.time
     });
-    
-    const response = await paymentsApi.create(paymentRequest);
+
+    const response = await paymentsApi.createPayment(payment);
     
     if (response.result.payment) {
-      const payment = response.result.payment;
+      const paymentResult = response.result.payment;
       
-      console.log('✅ Down payment successful:', {
-        paymentId: payment.id,
-        amount: payment.amountMoney.amount,
-        status: payment.status
+      console.log('Down payment successful:', {
+        paymentId: paymentResult.id,
+        status: paymentResult.status,
+        amount: paymentResult.amountMoney.amount
       });
-      
+
       return {
         success: true,
-        paymentId: payment.id,
-        amount: payment.amountMoney.amount,
-        status: payment.status,
-        receiptUrl: payment.receiptUrl,
-        type: 'down_payment'
+        paymentId: paymentResult.id,
+        amount: downPaymentAmount,
+        remainingAmount: remainingAmount,
+        status: paymentResult.status
       };
     } else {
-      throw new Error('Payment response missing payment object');
+      console.error('Down payment failed: No payment object in response');
+      return {
+        success: false,
+        error: 'Payment processing failed'
+      };
     }
-    
   } catch (error) {
-    console.error('❌ Down payment failed:', error);
+    console.error('Down payment error:', error);
+    
+    // Extract useful error information
+    let errorMessage = 'Payment processing failed';
+    let errorCode = 'UNKNOWN_ERROR';
+    
+    if (error.result && error.result.errors) {
+      const squareError = error.result.errors[0];
+      errorMessage = squareError.detail || squareError.code || errorMessage;
+      errorCode = squareError.code || errorCode;
+    }
     
     return {
       success: false,
-      error: error.message || 'Payment processing failed',
-      type: 'down_payment'
+      error: errorMessage,
+      code: errorCode
     };
   }
 }
 
-/**
- * Process full payment using Square
- * @param {Object} booking - Booking details
- * @param {string} sourceId - Square payment source ID
- * @param {number} totalAmount - Total service amount in cents
- * @returns {Promise<Object>} Payment result
- */
+// Process full payment (100% of service cost)
 async function processFullPayment(booking, sourceId, totalAmount) {
+  // Input validation
+  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+    throw new Error('Invalid booking data provided');
+  }
+  if (!totalAmount || totalAmount <= 0 || !Number.isInteger(totalAmount)) {
+    throw new Error('Valid payment amount in cents is required');
+  }
+
+  if (!paymentsApi) {
+    console.log('Square API not configured - using placeholder for full payment');
+    return {
+      success: true,
+      paymentId: `placeholder_full_${Date.now()}`,
+      amount: totalAmount,
+      status: 'COMPLETED'
+    };
+  }
+
   try {
-    const idempotencyKey = uuidv4();
+    const idempotencyKey = randomUUID();
     
-    const paymentRequest = {
-      sourceId: sourceId,
-      idempotencyKey: idempotencyKey,
+    const payment = {
+      sourceId,
       amountMoney: {
         amount: totalAmount,
         currency: 'USD'
       },
-      note: `Full payment for ${booking.service} on ${booking.date} at ${booking.time}`,
-      locationId: process.env.SQUARE_LOCATION_ID
+      idempotencyKey,
+      locationId: process.env.SQUARE_LOCATION_ID,
+      note: `Full payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
+      referenceId: `full_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
     };
-    
+
     console.log('Processing full payment:', {
       amount: totalAmount,
-      service: booking.service,
-      date: booking.date
+      service: booking.serviceInfo.name,
+      date: booking.date,
+      time: booking.time
     });
-    
-    const response = await paymentsApi.create(paymentRequest);
+
+    const response = await paymentsApi.createPayment(payment);
     
     if (response.result.payment) {
-      const payment = response.result.payment;
+      const paymentResult = response.result.payment;
       
-      console.log('✅ Full payment successful:', {
-        paymentId: payment.id,
-        amount: payment.amountMoney.amount,
-        status: payment.status
+      console.log('Full payment successful:', {
+        paymentId: paymentResult.id,
+        status: paymentResult.status,
+        amount: paymentResult.amountMoney.amount
       });
-      
+
       return {
         success: true,
-        paymentId: payment.id,
-        amount: payment.amountMoney.amount,
-        status: payment.status,
-        receiptUrl: payment.receiptUrl,
-        type: 'full_payment'
+        paymentId: paymentResult.id,
+        amount: totalAmount,
+        status: paymentResult.status
       };
     } else {
-      throw new Error('Payment response missing payment object');
+      console.error('Full payment failed: No payment object in response');
+      return {
+        success: false,
+        error: 'Payment processing failed'
+      };
     }
-    
   } catch (error) {
-    console.error('❌ Full payment failed:', error);
+    console.error('Full payment error:', error);
+    
+    // Extract useful error information
+    let errorMessage = 'Payment processing failed';
+    let errorCode = 'UNKNOWN_ERROR';
+    
+    if (error.result && error.result.errors) {
+      const squareError = error.result.errors[0];
+      errorMessage = squareError.detail || squareError.code || errorMessage;
+      errorCode = squareError.code || errorCode;
+    }
     
     return {
       success: false,
-      error: error.message || 'Payment processing failed',
-      type: 'full_payment'
+      error: errorMessage,
+      code: errorCode
     };
   }
 }
 
-/**
- * Create Square invoice for remaining payment (80%)
- * @param {Object} appointmentData - Appointment details
- * @param {string} customerEmail - Customer email address
- * @returns {Promise<Object>} Invoice creation result
- */
-async function createRemainingPaymentInvoice(appointmentData, customerEmail) {
-  try {
-    const remainingAmount = calculateRemainingPayment(appointmentData.serviceInfo.price);
-    const invoiceNumber = `LYRA-${Date.now()}`;
-    
-    const invoiceRequest = {
-      invoice: {
-        locationId: process.env.SQUARE_LOCATION_ID,
-        invoiceNumber: invoiceNumber,
-        title: `Remaining Payment - ${appointmentData.service}`,
-        description: `Remaining payment for ${appointmentData.service} appointment on ${appointmentData.date} at ${appointmentData.time}`,
-        primaryRecipient: {
-          customerId: customerEmail // In production, this should be a Square customer ID
-        },
-        paymentRequests: [{
-          requestMethod: 'EMAIL',
-          requestType: 'BALANCE',
-          dueDate: appointmentData.date // Due by appointment date
-        }],
-        orderRequest: {
-          order: {
-            locationId: process.env.SQUARE_LOCATION_ID,
-            lineItems: [{
-              name: `Remaining Payment - ${appointmentData.serviceInfo.name}`,
-              quantity: '1',
-              basePriceMoney: {
-                amount: remainingAmount,
-                currency: 'USD'
-              }
-            }]
-          }
-        },
-        acceptedPaymentMethods: {
-          card: true,
-          squareGiftCard: false,
-          bankAccount: true,
-          buyNowPayLater: false
-        }
-      }
+// Create invoice for remaining payment (80% of service cost)
+async function createRemainingPaymentInvoice(booking, remainingAmount, downPaymentId) {
+  // Input validation
+  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
+    throw new Error('Invalid booking data provided');
+  }
+  if (!remainingAmount || remainingAmount <= 0) {
+    throw new Error('Valid remaining amount is required');
+  }
+
+  if (!invoicesApi) {
+    console.log('Square API not configured - using placeholder for invoice creation');
+    return {
+      success: true,
+      invoiceId: `placeholder_invoice_${Date.now()}`,
+      invoiceNumber: `INV-${booking.date}-${booking.time}`.replace(/[^a-zA-Z0-9-]/g, ''),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      amount: remainingAmount
     };
-    
-    console.log('Creating invoice for remaining payment:', {
+  }
+
+  try {
+    const invoiceRequest = {
+      requestMethod: 'EMAIL',
+      requestType: 'BALANCE',
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // 7 days from now
+    };
+
+    const primaryRecipient = {
+      customerId: booking.customerId || null // Will need to implement customer creation
+    };
+
+    const paymentRequests = [{
+      requestMethod: 'EMAIL',
+      requestType: 'BALANCE',
+      dueDate: invoiceRequest.dueDate
+    }];
+
+    const deliveryMethod = 'EMAIL';
+    const invoiceNumber = `INV-${booking.date}-${booking.time}`.replace(/[^a-zA-Z0-9-]/g, '');
+    const title = `Remaining Payment - ${booking.serviceInfo.name}`;
+    const description = `Remaining balance for ${booking.serviceInfo.name} appointment scheduled for ${booking.date} at ${booking.time}`;
+    const scheduledAt = new Date().toISOString();
+    const acceptedPaymentMethods = {
+      card: true,
+      squareGiftCard: false,
+      bankAccount: false,
+      buyNowPayLater: false
+    };
+
+    const invoice = {
+      locationId: process.env.SQUARE_LOCATION_ID,
+      orderRequest: {
+        order: {
+          locationId: process.env.SQUARE_LOCATION_ID,
+          referenceId: `remaining_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_'),
+          lineItems: [{
+            name: `Remaining Balance - ${booking.serviceInfo.name}`,
+            quantity: '1',
+            basePriceMoney: {
+              amount: remainingAmount,
+              currency: 'USD'
+            },
+            note: `Balance due for appointment on ${booking.date} at ${booking.time}. Down payment ID: ${downPaymentId}`
+          }]
+        }
+      },
+      primaryRecipient,
+      paymentRequests,
+      deliveryMethod,
+      invoiceNumber,
+      title,
+      description,
+      scheduledAt,
+      acceptedPaymentMethods
+    };
+
+    console.log('Creating remaining payment invoice:', {
       amount: remainingAmount,
-      customer: customerEmail,
-      appointmentDate: appointmentData.date
+      invoiceNumber,
+      dueDate: invoiceRequest.dueDate
     });
-    
-    const response = await invoicesApi.create(invoiceRequest);
+
+    const response = await invoicesApi.createInvoice(invoice);
     
     if (response.result.invoice) {
-      const invoice = response.result.invoice;
+      const invoiceResult = response.result.invoice;
       
-      // Publish the invoice to send it
-      const publishRequest = {
-        version: invoice.version
-      };
-      
-      await invoicesApi.publish(invoice.id, publishRequest);
-      
-      console.log('✅ Invoice created and sent:', {
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        amount: remainingAmount
-      });
-      
-      return {
-        success: true,
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        amount: remainingAmount,
-        publicUrl: invoice.publicUrl
-      };
+      // Publish the invoice to send it to the customer
+      try {
+        const publishResponse = await invoicesApi.publishInvoice(invoiceResult.id, {
+          requestMethod: 'EMAIL'
+        });
+        
+        console.log('Invoice created and published:', {
+          invoiceId: invoiceResult.id,
+          invoiceNumber: invoiceResult.invoiceNumber,
+          status: publishResponse.result.invoice.status
+        });
+        
+        return {
+          success: true,
+          invoiceId: invoiceResult.id,
+          invoiceNumber: invoiceResult.invoiceNumber,
+          dueDate: invoiceRequest.dueDate,
+          amount: remainingAmount
+        };
+      } catch (publishError) {
+        console.error('Error publishing invoice:', publishError);
+        
+        // Return success for creation but note publish failure
+        return {
+          success: true,
+          invoiceId: invoiceResult.id,
+          invoiceNumber: invoiceResult.invoiceNumber,
+          dueDate: invoiceRequest.dueDate,
+          amount: remainingAmount,
+          publishError: 'Failed to send invoice to customer'
+        };
+      }
     } else {
-      throw new Error('Invoice response missing invoice object');
+      console.error('Invoice creation failed: No invoice object in response');
+      return {
+        success: false,
+        error: 'Invoice creation failed'
+      };
     }
-    
   } catch (error) {
-    console.error('❌ Invoice creation failed:', error);
+    console.error('Invoice creation error:', error);
+    
+    // Extract useful error information
+    let errorMessage = 'Invoice creation failed';
+    
+    if (error.result && error.result.errors) {
+      const squareError = error.result.errors[0];
+      errorMessage = squareError.detail || squareError.code || errorMessage;
+    }
     
     return {
       success: false,
-      error: error.message || 'Invoice creation failed'
+      error: errorMessage
     };
   }
 }
 
 module.exports = {
-  calculateDownPayment,
-  calculateRemainingPayment,
-  getServicePricing,
   processDownPayment,
   processFullPayment,
-  createRemainingPaymentInvoice
+  createRemainingPaymentInvoice,
+  calculateDownPayment,
+  calculateRemainingPayment
 };
