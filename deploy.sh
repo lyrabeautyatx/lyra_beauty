@@ -23,13 +23,22 @@ cd /opt/lyra-beauty
 # Install dependencies
 npm install
 
-# Create environment file
+# Create environment file (using sandbox for testing)
 cat > .env << EOF
 PORT=3000
 NODE_ENV=production
-SQUARE_ACCESS_TOKEN=your_production_token_here
-SQUARE_APPLICATION_ID=your_production_app_id_here
-SQUARE_LOCATION_ID=your_production_location_id_here
+# Square API Configuration (Sandbox for testing)
+SQUARE_ACCESS_TOKEN=EAAAl0sZO_ZHkGLPh980DN3D0LiFwLZcI3u61JAMMJZD_-R9DScwMM8D1AFu61z8
+SQUARE_APPLICATION_ID=sandbox-sq0idb-jk-22-dTJtSxqqJhkAl70g
+SQUARE_LOCATION_ID=LGBD5R9WFWF2S
+SQUARE_WEBHOOK_SIGNATURE_KEY=Mk93v-NN2J2etvTa3lQv-g
+SQUARE_ENVIRONMENT=sandbox
+# Add other required environment variables
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+JWT_SECRET=your_jwt_secret_here
+SESSION_SECRET=your_session_secret_here
+DATABASE_PATH=./lyra_beauty.db
 EOF
 
 # Start application with PM2

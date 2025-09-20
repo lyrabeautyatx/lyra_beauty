@@ -39,7 +39,7 @@
 #### Webhook Signature Key
 1. Go to: Sandbox → Webhooks
 2. Click "Create Subscription" or "Add Endpoint"
-3. Endpoint URL: `http://localhost:3000/webhooks/square` (for local testing)
+3. Endpoint URL: `https://lyrabeautyatx.com/webhooks/square` (for dev server)
 4. Select events:
    - payment.created
    - payment.updated  

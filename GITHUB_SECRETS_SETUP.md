@@ -19,6 +19,21 @@ Name: GOOGLE_CLIENT_SECRET
 Value: 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
 ```
 
+#### Square API (Sandbox - for development/testing)
+```
+Name: SQUARE_ACCESS_TOKEN_DEV
+Value: EAAAl0sZO_ZHkGLPh980DN3D0LiFwLZcI3u61JAMMJZD_-R9DScwMM8D1AFu61z8
+
+Name: SQUARE_APPLICATION_ID_DEV
+Value: sandbox-sq0idb-jk-22-dTJtSxqqJhkAl70g
+
+Name: SQUARE_LOCATION_ID_DEV
+Value: LGBD5R9WFWF2S
+
+Name: SQUARE_WEBHOOK_SIGNATURE_KEY_DEV
+Value: Mk93v-NN2J2etvTa3lQv-g
+```
+
 #### Square API (Production - get these from Square Dashboard Production tab)
 ```
 Name: SQUARE_ACCESS_TOKEN_PROD

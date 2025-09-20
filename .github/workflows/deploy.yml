@@ -37,11 +37,11 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           # Square API Configuration
-          SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
-          SQUARE_APPLICATION_ID: ${{ secrets.SQUARE_APPLICATION_ID }}
-          SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
-          SQUARE_WEBHOOK_SIGNATURE_KEY: ${{ secrets.SQUARE_WEBHOOK_SIGNATURE_KEY }}
-          SQUARE_ENVIRONMENT: ${{ secrets.SQUARE_ENVIRONMENT }}
+          SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN_DEV }}
+          SQUARE_APPLICATION_ID: ${{ secrets.SQUARE_APPLICATION_ID_DEV }}
+          SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID_DEV }}
+          SQUARE_WEBHOOK_SIGNATURE_KEY: ${{ secrets.SQUARE_WEBHOOK_SIGNATURE_KEY_DEV }}
+          SQUARE_ENVIRONMENT: sandbox
         run: |
           # Setup SSH
           mkdir -p ~/.ssh
@@ -139,12 +139,12 @@ jobs:
           GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
           GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
           
-          # Square API Configuration (Production)
+          # Square API Configuration (Sandbox for testing)
           SQUARE_ACCESS_TOKEN=$SQUARE_ACCESS_TOKEN
           SQUARE_APPLICATION_ID=$SQUARE_APPLICATION_ID
           SQUARE_LOCATION_ID=$SQUARE_LOCATION_ID
           SQUARE_WEBHOOK_SIGNATURE_KEY=$SQUARE_WEBHOOK_SIGNATURE_KEY
-          SQUARE_ENVIRONMENT=$SQUARE_ENVIRONMENT
+          SQUARE_ENVIRONMENT=sandbox
           
           # Database Configuration
           DATABASE_PATH=./lyra_beauty.db
