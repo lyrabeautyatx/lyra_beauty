@@ -14,7 +14,25 @@
       <p><strong>Service:</strong> <%= booking.serviceInfo.name %></p>
       <p><strong>Date:</strong> <%= moment(booking.date).format('MMMM Do, YYYY') %></p>
       <p><strong>Time:</strong> <%= booking.time %></p>
-      <p><strong>Amount:</strong> $<%= (booking.serviceInfo.price / 100).toFixed(2) %></p>
+      <p><strong>Total Amount:</strong> $<%= (totalAmount / 100).toFixed(2) %></p>
+    </div>
+    
+    <div class="payment-options">
+      <h3>Payment Options</h3>
+      <div class="payment-choice">
+        <label>
+          <input type="radio" name="payment-type" value="down" checked>
+          <strong>Down Payment (20%)</strong> - $<%= (downPaymentAmount / 100).toFixed(2) %>
+          <small>Secure your appointment with a 20% down payment. Remaining balance of $<%= (remainingAmount / 100).toFixed(2) %> will be invoiced separately.</small>
+        </label>
+      </div>
+      <div class="payment-choice">
+        <label>
+          <input type="radio" name="payment-type" value="full">
+          <strong>Full Payment</strong> - $<%= (totalAmount / 100).toFixed(2) %>
+          <small>Pay the full amount now to complete your booking.</small>
+        </label>
+      </div>
     </div>
     
     <div id="payment-form">
@@ -41,7 +59,9 @@
         <input type="text" id="cardholder" placeholder="John Doe">
       </div>
       
-      <button id="pay-button" type="button" class="btn">Pay $<%= (booking.serviceInfo.price / 100).toFixed(2) %></button>
+      <button id="pay-button" type="button" class="btn">
+        <span id="pay-button-text">Pay $<%= (downPaymentAmount / 100).toFixed(2) %> (Down Payment)</span>
+      </button>
     </div>
     
     <div id="payment-status"></div>
@@ -50,9 +70,28 @@
   </div>
 
   <script>
+    const totalAmount = <%= totalAmount %>;
+    const downPaymentAmount = <%= downPaymentAmount %>;
+    const remainingAmount = <%= remainingAmount %>;
+    
+    // Update button text when payment type changes
+    document.querySelectorAll('input[name="payment-type"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        const buttonText = document.getElementById('pay-button-text');
+        if (this.value === 'down') {
+          buttonText.textContent = `Pay $${(downPaymentAmount / 100).toFixed(2)} (Down Payment)`;
+        } else {
+          buttonText.textContent = `Pay $${(totalAmount / 100).toFixed(2)} (Full Payment)`;
+        }
+      });
+    });
+    
     document.getElementById('pay-button').addEventListener('click', async function() {
       const button = this;
       const statusDiv = document.getElementById('payment-status');
+      
+      // Get selected payment type
+      const paymentType = document.querySelector('input[name="payment-type"]:checked').value;
       
       // Basic validation
       const cardNumber = document.getElementById('card-number').value;
@@ -76,6 +115,7 @@
           },
           body: JSON.stringify({
             sourceId: 'mock_card_source',
+            paymentType: paymentType,
             cardDetails: {
               cardNumber,
               expiry,
@@ -88,10 +128,24 @@
         const result = await response.json();
         
         if (result.success) {
-          statusDiv.innerHTML = '<p class="success">Payment successful! Redirecting to your appointments...</p>';
+          let successMessage = 'Payment successful!';
+          if (paymentType === 'down') {
+            successMessage += ` Down payment of $${(result.paidAmount / 100).toFixed(2)} processed.`;
+            if (result.remainingAmount > 0) {
+              successMessage += ` Remaining balance of $${(result.remainingAmount / 100).toFixed(2)} will be invoiced separately.`;
+            }
+            if (result.invoiceId) {
+              successMessage += ` Invoice created: ${result.invoiceId}`;
+            }
+          } else {
+            successMessage += ` Full payment of $${(result.paidAmount / 100).toFixed(2)} processed.`;
+          }
+          successMessage += ' Redirecting to your appointments...';
+          
+          statusDiv.innerHTML = `<p class="success">${successMessage}</p>`;
           setTimeout(() => {
             window.location.href = '/my-appointments';
-          }, 2000);
+          }, 3000);
         } else {
           throw new Error(result.error || 'Payment failed');
         }

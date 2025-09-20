@@ -17,7 +17,33 @@
             <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
             <p><strong>Time:</strong> <%= appointment.time %></p>
             <p><strong>Status:</strong> <%= appointment.status %></p>
-            <% if (appointment.paidAmount) { %>
+            
+            <% if (appointment.paymentType && appointment.paymentStatus) { %>
+              <div class="payment-info">
+                <h4>Payment Information</h4>
+                <p><strong>Payment Type:</strong> <%= appointment.paymentType.replace('_', ' ').toUpperCase() %></p>
+                <p><strong>Payment Status:</strong> <%= appointment.paymentStatus.replace('_', ' ').toUpperCase() %></p>
+                
+                <% if (appointment.totalAmount) { %>
+                  <p><strong>Total Amount:</strong> $<%= (appointment.totalAmount / 100).toFixed(2) %></p>
+                <% } %>
+                
+                <% if (appointment.paidAmount) { %>
+                  <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
+                <% } %>
+                
+                <% if (appointment.remainingAmount && appointment.remainingAmount > 0) { %>
+                  <p><strong>Remaining Balance:</strong> $<%= (appointment.remainingAmount / 100).toFixed(2) %></p>
+                  <% if (appointment.paymentData && appointment.paymentData.invoiceId) { %>
+                    <p><strong>Invoice ID:</strong> <%= appointment.paymentData.invoiceId %></p>
+                  <% } %>
+                <% } %>
+                
+                <% if (appointment.paymentData && appointment.paymentData.paymentId) { %>
+                  <p><strong>Payment ID:</strong> <%= appointment.paymentData.paymentId %></p>
+                <% } %>
+              </div>
+            <% } else if (appointment.paidAmount) { %>
               <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
             <% } %>
           </div>

@@ -7,6 +7,16 @@ const moment = require('moment');
 // Load environment variables
 require('dotenv').config();
 
+// Import webhook routes
+const webhookRoutes = require('./routes/webhooks');
+const { 
+  processDownPayment, 
+  processFullPayment,
+  createRemainingPaymentInvoice, 
+  calculateDownPayment, 
+  calculateRemainingPayment 
+} = require('./services/payments');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -61,6 +71,7 @@ function isSlotAvailable(date, time) {
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
   secret: 'lyra_secret',
@@ -78,6 +89,9 @@ function requireAdmin(req, res, next) {
   if (req.session.user && req.session.user.role === 'admin') return next();
   res.status(403).send('Forbidden');
 }
+
+// Webhook routes
+app.use('/webhooks', webhookRoutes);
 
 app.get('/', (req, res) => {
   res.render('index', { user: req.session.user });
@@ -146,9 +160,16 @@ app.get('/payment', requireAuth, (req, res) => {
   }
   
   const booking = req.session.pendingBooking;
+  const totalAmount = booking.serviceInfo.price;
+  const downPaymentAmount = calculateDownPayment(totalAmount);
+  const remainingAmount = calculateRemainingPayment(totalAmount);
+  
   res.render('payment', {
     user: req.session.user,
     booking,
+    totalAmount,
+    downPaymentAmount,
+    remainingAmount,
     applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
     locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID' // Replace with your Square Location ID
   });
@@ -159,42 +180,130 @@ app.post('/process-payment', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'No pending booking found' });
   }
   
-  const { sourceId, cardDetails } = req.body;
+  const { sourceId, cardDetails, paymentType = 'down' } = req.body;
   const booking = req.session.pendingBooking;
   
   try {
-    // Mock payment processing for demonstration
-    // In production, you would integrate with Square's API here
-    console.log('Processing payment for:', booking.serviceInfo.name);
-    console.log('Amount:', booking.serviceInfo.price / 100);
+    let paymentResult;
+    const totalAmount = booking.serviceInfo.price;
     
-    // Simulate payment success (you can add validation logic here)
-    const paymentSuccess = true; // Mock successful payment
-    
-    if (paymentSuccess) {
-      // Save the appointment
-      const appointments = loadAppointments();
-      const newAppointment = {
-        id: Date.now(),
-        username: req.session.user.username,
-        date: booking.date,
-        time: booking.time,
-        service: booking.service,
-        serviceInfo: booking.serviceInfo,
-        status: 'confirmed',
-        paymentId: `mock_payment_${Date.now()}`,
-        paidAmount: booking.serviceInfo.price
-      };
+    if (paymentType === 'down') {
+      // Process down payment (20%)
+      console.log('Processing down payment for:', booking.serviceInfo.name);
+      console.log('Total amount:', totalAmount / 100);
+      console.log('Down payment amount:', calculateDownPayment(totalAmount) / 100);
       
-      appointments.push(newAppointment);
-      saveAppointments(appointments);
+      paymentResult = await processDownPayment(booking, sourceId, totalAmount);
       
-      // Clear pending booking
-      delete req.session.pendingBooking;
+      if (paymentResult.success) {
+        // Save the appointment with down payment information
+        const appointments = loadAppointments();
+        const newAppointment = {
+          id: Date.now(),
+          username: req.session.user.username,
+          date: booking.date,
+          time: booking.time,
+          service: booking.service,
+          serviceInfo: booking.serviceInfo,
+          status: 'confirmed',
+          paymentStatus: 'down_payment_completed',
+          paymentType: 'down_payment',
+          totalAmount: totalAmount,
+          paidAmount: paymentResult.amount,
+          remainingAmount: paymentResult.remainingAmount,
+          paymentData: {
+            paymentId: paymentResult.paymentId,
+            referenceId: paymentResult.referenceId,
+            status: paymentResult.status,
+            createdAt: new Date().toISOString()
+          }
+        };
+        
+        appointments.push(newAppointment);
+        saveAppointments(appointments);
+        
+        // Create invoice for remaining payment
+        const invoiceResult = await createRemainingPaymentInvoice(
+          booking, 
+          paymentResult.remainingAmount, 
+          paymentResult.paymentId
+        );
+        
+        if (invoiceResult.success) {
+          newAppointment.paymentData.invoiceId = invoiceResult.invoiceId;
+          newAppointment.paymentData.invoiceNumber = invoiceResult.invoiceNumber;
+          saveAppointments(appointments);
+        }
+        
+        // Clear pending booking
+        delete req.session.pendingBooking;
+        
+        res.json({ 
+          success: true, 
+          appointmentId: newAppointment.id,
+          paymentId: paymentResult.paymentId,
+          paidAmount: paymentResult.amount,
+          remainingAmount: paymentResult.remainingAmount,
+          invoiceId: invoiceResult.success ? invoiceResult.invoiceId : null
+        });
+      } else {
+        res.status(400).json({ 
+          error: paymentResult.error || 'Down payment was not completed',
+          code: paymentResult.code 
+        });
+      }
+    } else if (paymentType === 'full') {
+      // Process full payment
+      console.log('Processing full payment for:', booking.serviceInfo.name);
+      console.log('Amount:', totalAmount / 100);
       
-      res.json({ success: true, appointmentId: newAppointment.id });
+      paymentResult = await processFullPayment(booking, sourceId, totalAmount);
+      
+      if (paymentResult.success) {
+        // Save the appointment with full payment information
+        const appointments = loadAppointments();
+        const newAppointment = {
+          id: Date.now(),
+          username: req.session.user.username,
+          date: booking.date,
+          time: booking.time,
+          service: booking.service,
+          serviceInfo: booking.serviceInfo,
+          status: 'confirmed',
+          paymentStatus: 'full_payment_completed',
+          paymentType: 'full_payment',
+          totalAmount: totalAmount,
+          paidAmount: totalAmount,
+          remainingAmount: 0,
+          paymentData: {
+            paymentId: paymentResult.paymentId,
+            referenceId: paymentResult.referenceId,
+            status: paymentResult.status,
+            createdAt: new Date().toISOString()
+          }
+        };
+        
+        appointments.push(newAppointment);
+        saveAppointments(appointments);
+        
+        // Clear pending booking
+        delete req.session.pendingBooking;
+        
+        res.json({ 
+          success: true, 
+          appointmentId: newAppointment.id,
+          paymentId: paymentResult.paymentId,
+          paidAmount: totalAmount,
+          remainingAmount: 0
+        });
+      } else {
+        res.status(400).json({ 
+          error: paymentResult.error || 'Payment was not completed',
+          code: paymentResult.code 
+        });
+      }
     } else {
-      res.status(400).json({ error: 'Payment was not completed' });
+      res.status(400).json({ error: 'Invalid payment type' });
     }
   } catch (error) {
     console.error('Payment error:', error);
