@@ -277,3 +277,267 @@ a:hover {
   color: #666;
   font-size: 0.9em;
 }
+
+/* Services Page Styles */
+.services-page {
+  min-height: 100vh;
+}
+
+.services-intro {
+  font-size: 1.1em;
+  margin-bottom: 1.5rem;
+  color: #666;
+}
+
+.nav-links {
+  margin: 1.5rem 0;
+  padding: 1rem 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.nav-links a {
+  margin: 0 0.5rem;
+  font-size: 0.9em;
+}
+
+.services-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.search-filter-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.search-input, .filter-select {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+}
+
+.search-input:focus, .filter-select:focus {
+  outline: none;
+  border-color: #bfa14a;
+  box-shadow: 0 0 0 2px rgba(191, 161, 74, 0.2);
+}
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 3rem;
+}
+
+.service-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  padding: 1.5rem;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  border: 1px solid #f0f0f0;
+}
+
+.service-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+
+.service-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #f5f5f5;
+}
+
+.service-name {
+  color: #bfa14a;
+  margin: 0;
+  font-size: 1.3em;
+  font-weight: 600;
+}
+
+.service-price {
+  font-size: 1.4em;
+  font-weight: bold;
+  color: #333;
+  background: linear-gradient(135deg, #fffbe6 0%, #ffd700 100%);
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  border: 2px solid #bfa14a;
+}
+
+.service-details {
+  margin-bottom: 1.5rem;
+}
+
+.service-duration {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 1rem;
+  font-size: 0.95em;
+}
+
+.duration-icon {
+  font-size: 1.1em;
+}
+
+.service-description {
+  color: #666;
+  line-height: 1.5;
+  margin: 0;
+  font-size: 0.95em;
+}
+
+.service-actions {
+  text-align: center;
+}
+
+.btn-primary {
+  background: #bfa14a;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 25px;
+  text-decoration: none;
+  display: inline-block;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.btn-primary:hover {
+  background: #a08a3a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(191, 161, 74, 0.3);
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 25px;
+  text-decoration: none;
+  display: inline-block;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  font-size: 1rem;
+}
+
+.btn-secondary:hover {
+  background: #545b62;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+}
+
+.btn-large {
+  padding: 1rem 2rem;
+  font-size: 1.1em;
+}
+
+.cta-section {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: linear-gradient(135deg, rgba(255,251,230,0.8) 0%, rgba(255,215,0,0.8) 100%);
+  border-radius: 15px;
+  margin: 2rem 0;
+}
+
+.cta-section h2 {
+  margin-bottom: 1rem;
+  color: #bfa14a;
+  font-size: 2em;
+}
+
+.cta-section p {
+  font-size: 1.1em;
+  color: #666;
+  margin-bottom: 2rem;
+}
+
+.no-services {
+  text-align: center;
+  font-size: 1.1em;
+  color: #666;
+  padding: 3rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .services-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  
+  .search-filter-container {
+    flex-direction: column;
+  }
+  
+  .search-input, .filter-select {
+    min-width: auto;
+  }
+  
+  .service-header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+  
+  .service-price {
+    align-self: center;
+  }
+  
+  .cta-section {
+    padding: 2rem 1rem;
+  }
+  
+  .cta-section h2 {
+    font-size: 1.5em;
+  }
+}
+
+@media (max-width: 480px) {
+  .services-container {
+    padding: 0 0.5rem;
+  }
+  
+  .service-card {
+    padding: 1rem;
+  }
+  
+  .nav-links a {
+    display: block;
+    margin: 0.25rem 0;
+  }
+}
+
+/* Home Page Styles */
+.home-intro {
+  font-size: 1.1em;
+  color: #666;
+  margin-bottom: 2rem;
+}
+
+.home-actions {
+  margin: 2rem 0;
+}
+
+.home-actions .btn {
+  margin: 0.5rem;
+}
