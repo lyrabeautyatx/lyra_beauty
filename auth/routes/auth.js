@@ -11,6 +11,14 @@ const router = express.Router();
 const isOAuthConfigured = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
 console.log('OAuth configured:', isOAuthConfigured, 'Client ID:', process.env.GOOGLE_CLIENT_ID, 'Secret:', process.env.GOOGLE_CLIENT_SECRET ? '[present]' : '[missing]');
 
+// OAuth status endpoint (for frontend checks)
+router.get('/status', (req, res) => {
+  res.json({ 
+    oauthAvailable: isOAuthConfigured,
+    provider: 'google'
+  });
+});
+
 // Initiate Google OAuth
 router.get('/google', (req, res, next) => {
   if (!isOAuthConfigured) {

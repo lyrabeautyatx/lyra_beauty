@@ -1,3 +1,6 @@
+// Load environment variables FIRST - before any other imports
+require('dotenv').config();
+
 const express = require('express');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
@@ -6,9 +9,6 @@ const fs = require('fs');
 const moment = require('moment');
 const passport = require('./auth/strategies/google');
 const { getDatabase } = require('./database');
-
-// Load environment variables
-require('dotenv').config();
 
 // Import webhook and payment services
 const webhookRoutes = require('./routes/webhooks');

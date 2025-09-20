@@ -43,16 +43,17 @@
 
   <script>
     // Check if OAuth is configured
-    fetch('/auth/google')
-      .then(response => {
-        if (response.status === 503) {
+    fetch('/auth/status')
+      .then(response => response.json())
+      .then(data => {
+        if (!data.oauthAvailable) {
           document.getElementById('google-signin').style.display = 'none';
           document.getElementById('oauth-status').textContent = 'Google OAuth not configured. Using legacy login.';
           document.getElementById('oauth-status').style.color = '#f39c12';
         }
       })
       .catch(() => {
-        // OAuth check failed, hide Google button
+        // OAuth status check failed, hide Google button
         document.getElementById('google-signin').style.display = 'none';
         document.getElementById('oauth-status').textContent = 'Google OAuth not available. Using legacy login.';
         document.getElementById('oauth-status').style.color = '#f39c12';
