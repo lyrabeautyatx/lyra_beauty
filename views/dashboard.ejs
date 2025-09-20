@@ -8,12 +8,25 @@
 <body class="gold-bg">
   <div class="container">
     <h2>User Dashboard</h2>
-    <p>Welcome, <%= user.username %>!</p>
+    <p>Welcome, <%= user.display_name || user.first_name || user.username %>!</p>
     
-    <div class="dashboard-links">
-      <a href="/book" class="btn">Book Appointment</a>
-      <a href="/my-appointments" class="btn">My Appointments</a>
-    </div>
+    <% if (user.role === 'partner') { %>
+      <div class="dashboard-links">
+        <a href="/partner-dashboard" class="btn">Partner Dashboard</a>
+        <a href="/referrals" class="btn">Referrals</a>
+        <a href="/commissions" class="btn">Commissions</a>
+      </div>
+    <% } else if (user.role === 'customer' || user.role === 'user') { %>
+      <div class="dashboard-links">
+        <a href="/book" class="btn">Book Appointment</a>
+        <a href="/my-appointments" class="btn">My Appointments</a>
+      </div>
+    <% } else { %>
+      <div class="dashboard-links">
+        <a href="/book" class="btn">Book Appointment</a>
+        <a href="/my-appointments" class="btn">My Appointments</a>
+      </div>
+    <% } %>
     
     <a href="/logout">Logout</a>
   </div>
