@@ -1,9 +1,8 @@
-name: Deploy to AWS EC2 via SSM
+name: Deploy to AWS EC2 via SSM (DISABLED)
 
 on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+  # Disabled - using direct SSH deployment instead
+  workflow_dispatch:  # Only manual trigger
 
 jobs:
   deploy:
@@ -46,8 +45,10 @@ jobs:
         
     - name: Upload to S3
       run: |
-        # Upload deployment package to S3
-        aws s3 cp app.tar.gz s3://lyra-beauty-deployments-$(date +%Y%m%d)/app.tar.gz
+        # Upload deployment package to S3 with timestamp folder
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        aws s3 cp app.tar.gz s3://lyra-beauty-deployments/deployments/$TIMESTAMP/app.tar.gz
+        echo "DEPLOYMENT_S3_PATH=s3://lyra-beauty-deployments/deployments/$TIMESTAMP/app.tar.gz" >> $GITHUB_ENV
         
     - name: Deploy via SSM
       run: |
@@ -65,18 +66,19 @@ jobs:
         echo "Deploying to instance: $INSTANCE_ID"
         
         # Execute deployment commands via SSM
+        DEPLOYMENT_PATH="deployments/$(date +%Y%m%d-%H%M%S)"
         aws ssm send-command \
           --instance-ids $INSTANCE_ID \
           --document-name "AWS-RunShellScript" \
-          --parameters 'commands=[
-            "sudo yum update -y",
-            "curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -",
-            "sudo yum install -y nodejs",
-            "sudo npm install -g pm2",
-            "sudo mkdir -p /opt/lyra-beauty",
-            "sudo chown ec2-user:ec2-user /opt/lyra-beauty",
-            "cd /opt/lyra-beauty",
-            "aws s3 cp s3://lyra-beauty-deployments-$(date +%Y%m%d)/app.tar.gz .",
+          --parameters "commands=[
+            \"sudo yum update -y\",
+            \"curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -\",
+            \"sudo yum install -y nodejs\",
+            \"sudo npm install -g pm2\",
+            \"sudo mkdir -p /opt/lyra-beauty\",
+            \"sudo chown ec2-user:ec2-user /opt/lyra-beauty\",
+            \"cd /opt/lyra-beauty\",
+            \"aws s3 cp s3://lyra-beauty-deployments/$DEPLOYMENT_PATH/app.tar.gz .\",
             "tar -xzf app.tar.gz",
             "npm install --production",
             "echo \"NODE_ENV=production\" > .env",
