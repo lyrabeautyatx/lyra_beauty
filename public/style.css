@@ -184,6 +184,20 @@ a:hover {
   margin: 1rem 0;
 }
 
+.payment-info {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 0.8rem;
+  margin-top: 1rem;
+}
+
+.payment-info h4 {
+  margin: 0 0 0.5rem 0;
+  color: #bfa14a;
+  font-size: 1em;
+}
+
 .booking-summary {
   background: #f9f9f9;
   border: 1px solid #ddd;
@@ -217,4 +231,49 @@ a:hover {
 .error {
   color: #d9534f;
   font-weight: bold;
+}
+
+.payment-options {
+  margin: 2rem 0;
+}
+
+.payment-choice {
+  background: #f9f9f9;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.payment-choice:hover {
+  border-color: #bfa14a;
+}
+
+.payment-choice label {
+  cursor: pointer;
+  display: block;
+  margin: 0;
+}
+
+.payment-choice input[type="radio"] {
+  margin-right: 10px;
+}
+
+.payment-choice input[type="radio"]:checked {
+  accent-color: #bfa14a;
+}
+
+.payment-choice:has(input[type="radio"]:checked) {
+  border-color: #bfa14a;
+  background: #fefef0;
+}
+
+.payment-choice small {
+  display: block;
+  margin-top: 0.5rem;
+  color: #666;
+  font-size: 0.9em;
 }
