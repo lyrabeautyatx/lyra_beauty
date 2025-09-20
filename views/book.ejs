@@ -25,10 +25,10 @@
         <div class="form-group">
           <label for="service">Service:</label>
           <select name="service" required>
-            <option value="microblading">Microblading - $<%= (servicePricing.microblading.price / 100).toFixed(2) %></option>
-            <option value="microshading">Microshading - $<%= (servicePricing.microshading.price / 100).toFixed(2) %></option>
-            <option value="lipglow">Lip Glow - $<%= (servicePricing.lipglow.price / 100).toFixed(2) %></option>
-            <option value="browmapping">Brow Mapping - $<%= (servicePricing.browmapping.price / 100).toFixed(2) %></option>
+            <option value="microblading" <%= preSelectedService === 'microblading' ? 'selected' : '' %>>Microblading - $<%= (servicePricing.microblading.price / 100).toFixed(2) %></option>
+            <option value="microshading" <%= preSelectedService === 'microshading' ? 'selected' : '' %>>Microshading - $<%= (servicePricing.microshading.price / 100).toFixed(2) %></option>
+            <option value="lipglow" <%= preSelectedService === 'lipglow' ? 'selected' : '' %>>Lip Glow - $<%= (servicePricing.lipglow.price / 100).toFixed(2) %></option>
+            <option value="browmapping" <%= preSelectedService === 'browmapping' ? 'selected' : '' %>>Brow Mapping - $<%= (servicePricing.browmapping.price / 100).toFixed(2) %></option>
           </select>
         </div>
         

@@ -8,16 +8,29 @@
 <body class="gold-bg">
   <div class="container">
     <h1>Welcome to Lyra Beauty</h1>
-    <% if (user) { %>
-      <p>Hello, <%= user.username %>!</p>
-      <a href="/dashboard">Dashboard</a>
-      <% if (user.role === 'admin') { %>
-        | <a href="/admin">Admin Panel</a>
+    <p class="home-intro">Professional beauty services tailored to enhance your natural beauty.</p>
+    
+    <div class="home-actions">
+      <a href="/services" class="btn btn-primary">View Our Services</a>
+      <% if (user) { %>
+        <a href="/book" class="btn btn-secondary">Book Appointment</a>
+      <% } else { %>
+        <a href="/login" class="btn btn-secondary">Login to Book</a>
       <% } %>
-      | <a href="/logout">Logout</a>
-    <% } else { %>
-      <a href="/login">Login</a>
-    <% } %>
+    </div>
+    
+    <div class="nav-links">
+      <% if (user) { %>
+        <p>Hello, <%= user.username %>!</p>
+        <a href="/dashboard">Dashboard</a>
+        <% if (user.role === 'admin') { %>
+          | <a href="/admin">Admin Panel</a>
+        <% } %>
+        | <a href="/logout">Logout</a>
+      <% } else { %>
+        <a href="/login">Login</a>
+      <% } %>
+    </div>
   </div>
 </body>
 </html>

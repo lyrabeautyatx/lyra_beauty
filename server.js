@@ -203,6 +203,23 @@ app.get('/', (req, res) => {
   res.render('index', { user: req.session.user });
 });
 
+// Public services page (no authentication required)
+app.get('/services', async (req, res) => {
+  try {
+    const services = await db.all('SELECT id, name, price, duration_minutes, description FROM services WHERE active = 1 ORDER BY price');
+    res.render('services', { 
+      user: req.session.user,
+      services: services
+    });
+  } catch (error) {
+    console.error('Error loading services:', error);
+    res.render('services', { 
+      user: req.session.user,
+      services: [],
+      error: 'Unable to load services at this time.'
+    });
+  }
+});
 
 // Show login page (with sign up option)
 app.get('/login', (req, res) => {
@@ -295,6 +312,7 @@ app.get('/dashboard', requireAuth, (req, res) => {
 
 app.get('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   const selectedDate = req.query.date || moment().format('YYYY-MM-DD');
+  const preSelectedService = req.query.service || ''; // Get pre-selected service from query params
   const timeSlots = generateTimeSlots(selectedDate);
   const availableSlots = [];
   
@@ -312,6 +330,7 @@ app.get('/book', requireAuth, blockPartnerBooking, async (req, res) => {
     selectedDate,
     availableSlots,
     servicePricing,
+    preSelectedService,
     moment
   });
 });
