@@ -18,12 +18,37 @@ function verifyWebhookSignature(signature, body, url) {
     return false;
   }
 
+  if (!signature || typeof signature !== 'string') {
+    console.error('Invalid webhook signature format');
+    return false;
+  }
+
+  if (!body || typeof body !== 'string') {
+    console.error('Invalid webhook body format');
+    return false;
+  }
+
+  if (!url || typeof url !== 'string') {
+    console.error('Invalid webhook URL format');
+    return false;
+  }
+
   try {
     const hmac = crypto.createHmac('sha256', squareConfig.webhookSignatureKey);
     hmac.update(url + body);
     const calculatedSignature = hmac.digest('base64');
     
-    return signature === calculatedSignature;
+    const isValid = signature === calculatedSignature;
+    if (!isValid) {
+      console.error('Webhook signature verification failed', {
+        expected: calculatedSignature,
+        received: signature,
+        url: url,
+        bodyLength: body.length
+      });
+    }
+    
+    return isValid;
   } catch (error) {
     console.error('Signature verification error:', error);
     return false;
