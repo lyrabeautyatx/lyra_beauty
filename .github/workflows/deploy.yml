@@ -28,6 +28,20 @@ jobs:
         env:
           PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           HOSTNAME: ${{ secrets.EC2_HOST }}
+          # Application Environment Variables
+          NODE_ENV: ${{ secrets.NODE_ENV }}
+          PORT: ${{ secrets.PORT }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          # Google OAuth Configuration
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          # Square API Configuration
+          SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
+          SQUARE_APPLICATION_ID: ${{ secrets.SQUARE_APPLICATION_ID }}
+          SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
+          SQUARE_WEBHOOK_SIGNATURE_KEY: ${{ secrets.SQUARE_WEBHOOK_SIGNATURE_KEY }}
+          SQUARE_ENVIRONMENT: ${{ secrets.SQUARE_ENVIRONMENT }}
         run: |
           # Setup SSH
           mkdir -p ~/.ssh
@@ -80,8 +94,8 @@ jobs:
           # Upload deployment package
           scp lyra-beauty-deploy.tar.gz production:/tmp/
 
-          # Execute deployment on server
-          ssh production << 'DEPLOY_SCRIPT'
+          # Execute deployment on server with environment variables
+          ssh production << DEPLOY_SCRIPT
           set -e
 
           echo "📁 Setting up deployment environment..."
@@ -94,7 +108,7 @@ jobs:
           # Create backup of current version
           if [ -f package.json ]; then
             echo "💾 Creating backup of current version..."
-            tar -czf "backup-$(date +%Y%m%d-%H%M%S).tar.gz" \
+            tar -czf "backup-\$(date +%Y%m%d-%H%M%S).tar.gz" \
               --exclude='backup-*.tar.gz' \
               --exclude='node_modules' \
               --exclude='logs/*.log' \
@@ -110,16 +124,67 @@ jobs:
           echo "📦 Installing production dependencies..."
           npm install --only=production --no-audit
 
-          # Setup environment
+          # Setup environment with GitHub secrets
           echo "⚙️ Configuring production environment..."
           cat > .env << EOF
-          NODE_ENV=production
-          PORT=3000
-          SESSION_SECRET=lyra_beauty_prod_$(openssl rand -hex 32)
+          # Production Environment Configuration
+          NODE_ENV=$NODE_ENV
+          PORT=$PORT
+          
+          # Security Configuration
+          SESSION_SECRET=$SESSION_SECRET
+          JWT_SECRET=$JWT_SECRET
+          
+          # Google OAuth Configuration
+          GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+          GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+          
+          # Square API Configuration (Production)
+          SQUARE_ACCESS_TOKEN=$SQUARE_ACCESS_TOKEN
+          SQUARE_APPLICATION_ID=$SQUARE_APPLICATION_ID
+          SQUARE_LOCATION_ID=$SQUARE_LOCATION_ID
+          SQUARE_WEBHOOK_SIGNATURE_KEY=$SQUARE_WEBHOOK_SIGNATURE_KEY
+          SQUARE_ENVIRONMENT=$SQUARE_ENVIRONMENT
+          
+          # Database Configuration
+          DATABASE_PATH=./lyra_beauty.db
+          
+          # AWS S3 Backup Configuration (Optional)
+          AWS_S3_BACKUP_BUCKET=lyra-beauty-backups
           EOF
+          
+          # Secure the .env file
+          chmod 600 .env
+          echo "✅ Environment variables configured securely"
+
+          # Validate environment configuration
+          echo "🔍 Validating environment configuration..."
+          if [ -f .env ]; then
+            echo "✅ .env file created"
+            echo "📝 Environment variables configured:"
+            echo "   - NODE_ENV: \$(grep NODE_ENV .env | cut -d'=' -f2)"
+            echo "   - PORT: \$(grep PORT .env | cut -d'=' -f2)"
+            echo "   - GOOGLE_CLIENT_ID: \$(grep GOOGLE_CLIENT_ID .env | cut -d'=' -f2 | head -c 20)..."
+            echo "   - SQUARE_ENVIRONMENT: \$(grep SQUARE_ENVIRONMENT .env | cut -d'=' -f2)"
+          else
+            echo "❌ .env file not found!"
+            exit 1
+          fi
 
           # Ensure logs directory exists
           mkdir -p logs
+
+          # Verify environment configuration before starting
+          echo "🔍 Verifying environment configuration..."
+          if [ -f scripts/verify-environment.js ]; then
+            node scripts/verify-environment.js
+            if [ \$? -ne 0 ]; then
+              echo "❌ Environment verification failed!"
+              exit 1
+            fi
+          else
+            echo "⚠️  Environment verification script not found, skipping..."
+          fi
 
           # Restart application using PM2 ecosystem
           echo "🔄 Restarting application with PM2..."
