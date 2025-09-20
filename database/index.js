@@ -19,40 +19,35 @@ class Database {
 
       this.db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
-          console.error('Error opening database:', err);
+          console.error('Database connection failed:', err.message);
+          this.ready = false;
           reject(err);
         } else {
-          console.log('Connected to SQLite database at:', this.dbPath);
+          console.log('Database connected successfully to:', this.dbPath);
           this.ready = true;
+          
+          // Enable foreign key constraints
+          this.db.run('PRAGMA foreign_keys = ON');
+          
           resolve();
         }
       });
-
-      // Enable foreign key constraints
-      this.db.run('PRAGMA foreign_keys = ON');
     });
   }
 
   isReady() {
-    return this.ready && this.db;
-  }
-
-  async run(sql, params = []) {
-    return new Promise((resolve, reject) => {
-      this.db.run(sql, params, function(err) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ lastID: this.lastID, changes: this.changes });
-        }
-      });
-    });
+    return this.ready && this.db !== null;
   }
 
   async get(sql, params = []) {
+    if (!this.isReady()) {
+      throw new Error('Database not connected');
+    }
+
     return new Promise((resolve, reject) => {
       this.db.get(sql, params, (err, row) => {
         if (err) {
+          console.error('Database GET error:', err.message);
           reject(err);
         } else {
           resolve(row);
@@ -62,44 +57,68 @@ class Database {
   }
 
   async all(sql, params = []) {
+    if (!this.isReady()) {
+      throw new Error('Database not connected');
+    }
+
     return new Promise((resolve, reject) => {
       this.db.all(sql, params, (err, rows) => {
         if (err) {
+          console.error('Database ALL error:', err.message);
           reject(err);
         } else {
-          resolve(rows);
+          resolve(rows || []);
+        }
+      });
+    });
+  }
+
+  async run(sql, params = []) {
+    if (!this.isReady()) {
+      throw new Error('Database not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, params, function(err) {
+        if (err) {
+          console.error('Database RUN error:', err.message);
+          reject(err);
+        } else {
+          resolve({
+            id: this.lastID,
+            changes: this.changes
+          });
         }
       });
     });
   }
 
   async close() {
-    return new Promise((resolve, reject) => {
-      if (this.db) {
+    if (this.db) {
+      return new Promise((resolve) => {
         this.db.close((err) => {
           if (err) {
-            reject(err);
+            console.error('Error closing database:', err.message);
           } else {
-            this.ready = false;
             console.log('Database connection closed');
-            resolve();
           }
+          this.ready = false;
+          this.db = null;
+          resolve();
         });
-      } else {
-        resolve();
-      }
-    });
+      });
+    }
   }
 }
 
 // Singleton instance
-let database = null;
+let dbInstance = null;
 
 function getDatabase() {
-  if (!database) {
-    database = new Database();
+  if (!dbInstance) {
+    dbInstance = new Database();
   }
-  return database;
+  return dbInstance;
 }
 
 module.exports = {
