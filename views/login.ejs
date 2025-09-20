@@ -38,6 +38,14 @@
         <button type="submit">Login with Username</button>
       </form>
       <p class="legacy-note">Note: Username/password login is for development. Use Google Sign-In for production.</p>
+      <hr>
+      <button id="show-signup" type="button" class="btn secondary-btn" style="margin-top:10px;">Create an account</button>
+      <form id="signup-form" method="POST" action="/signup" style="display:none; margin-top:10px;">
+        <input type="text" name="new_username" placeholder="Choose a username" required><br>
+        <input type="password" name="new_password" placeholder="Choose a password" required><br>
+        <button type="submit">Sign Up</button>
+        <p class="legacy-note">Sign up for a basic account. No email required.</p>
+      </form>
     </div>
   </div>
 
@@ -58,6 +66,12 @@
         document.getElementById('oauth-status').textContent = 'Google OAuth not available. Using legacy login.';
         document.getElementById('oauth-status').style.color = '#f39c12';
       });
+
+    // Toggle sign up form
+    document.getElementById('show-signup').addEventListener('click', function() {
+      var form = document.getElementById('signup-form');
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+    });
   </script>
 </body>
 </html>
