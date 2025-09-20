@@ -128,8 +128,11 @@ function checkPermission(permission) {
     
     const permissions = userService.getUserPermissions(user);
     
-    // Check if permission exists in the actions array
-    if (permissions && permissions.actions && permissions.actions.includes(permission)) {
+    // Check if permission exists in the actions array or directly in permissions (for backward compatibility)
+    if (
+      (permissions && Array.isArray(permissions) && permissions.includes(permission)) ||
+      (permissions && permissions.actions && Array.isArray(permissions.actions) && permissions.actions.includes(permission))
+    ) {
       return next();
     }
     
