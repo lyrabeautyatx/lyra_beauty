@@ -60,6 +60,22 @@ async function createDatabaseSchema() {
     `);
     console.log('✓ Appointments table created');
 
+    // Create payments table for webhook tracking
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        square_payment_id TEXT UNIQUE,
+        appointment_id INTEGER,
+        amount INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (appointment_id) REFERENCES appointments (id)
+      )
+    `);
+    console.log('✓ Payments table created');
+
     // Create coupons table (for future partner system)
     await db.run(`
       CREATE TABLE IF NOT EXISTS coupons (

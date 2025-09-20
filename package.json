@@ -35,7 +35,7 @@
     "nodemailer": "^6.9.7",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "sqlite3": "^5.1.6",
+    "sqlite3": "^5.1.7",
     "square": "^43.0.2",
     "uuid": "^13.0.0"
   },

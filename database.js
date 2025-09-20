@@ -5,32 +5,51 @@ class Database {
   constructor() {
     this.db = null;
     this.isConnected = false;
-    this.dbPath = path.join(__dirname, 'lyra_beauty.db');
   }
 
   async connect() {
-    return new Promise((resolve, reject) => {
-      this.db = new sqlite3.Database(this.dbPath, (err) => {
+    if (this.isConnected && this.db) {
+      return this.db;
+    }
+
+    try {
+      const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'lyra_beauty.db');
+      
+      this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
-          console.error('Error connecting to database:', err);
-          reject(err);
-        } else {
-          this.isConnected = true;
-          console.log('Connected to SQLite database');
-          resolve();
+          console.error('Error opening database:', err);
+          throw err;
         }
+        console.log('Connected to SQLite database');
       });
-    });
+      
+      this.isConnected = true;
+      
+      // Enable foreign keys
+      await this.run('PRAGMA foreign_keys = ON');
+      
+      return this.db;
+    } catch (error) {
+      console.error('Database connection failed:', error);
+      throw error;
+    }
   }
 
   isReady() {
     return this.isConnected && this.db;
   }
 
-  async run(sql, params = []) {
+  // Promisify database operations
+  run(sql, params = []) {
     return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+      
       this.db.run(sql, params, function(err) {
         if (err) {
+          console.error('Database run error:', err);
           reject(err);
         } else {
           resolve({ id: this.lastID, changes: this.changes });
@@ -39,10 +58,16 @@ class Database {
     });
   }
 
-  async get(sql, params = []) {
+  get(sql, params = []) {
     return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+      
       this.db.get(sql, params, (err, row) => {
         if (err) {
+          console.error('Database get error:', err);
           reject(err);
         } else {
           resolve(row);
@@ -51,10 +76,16 @@ class Database {
     });
   }
 
-  async all(sql, params = []) {
+  all(sql, params = []) {
     return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+      
       this.db.all(sql, params, (err, rows) => {
         if (err) {
+          console.error('Database all error:', err);
           reject(err);
         } else {
           resolve(rows);
@@ -64,31 +95,31 @@ class Database {
   }
 
   async close() {
-    return new Promise((resolve, reject) => {
-      if (this.db) {
+    if (this.db) {
+      return new Promise((resolve, reject) => {
         this.db.close((err) => {
           if (err) {
+            console.error('Error closing database:', err);
             reject(err);
           } else {
+            console.log('Database connection closed');
             this.isConnected = false;
             resolve();
           }
         });
-      } else {
-        resolve();
-      }
-    });
+      });
+    }
   }
 }
 
 // Singleton instance
-let databaseInstance = null;
+let instance = null;
 
 function getDatabase() {
-  if (!databaseInstance) {
-    databaseInstance = new Database();
+  if (!instance) {
+    instance = new Database();
   }
-  return databaseInstance;
+  return instance;
 }
 
-module.exports = { getDatabase };
+module.exports = { getDatabase, Database };
