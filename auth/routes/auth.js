@@ -1,6 +1,6 @@
 const express = require('express');
 const passport = require('../strategies/google');
-const { generateJWT } = require('../middleware/auth');
+const { generateJWT, verifyJWT, handleTokenRefresh, requireAuth } = require('../middleware/auth');
 
 // Load environment variables
 require('dotenv').config();
@@ -38,8 +38,18 @@ router.get('/google/callback', (req, res, next) => {
     // Generate JWT token
     const token = generateJWT(req.user);
     
+    // Set JWT token as HTTP-only cookie for session persistence
+    res.cookie('jwt_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+    
     // Store user in session for compatibility with existing code
     req.session.user = req.user;
+    
+    console.log(`✓ JWT token set for user: ${req.user.email}`);
     
     // Redirect based on role
     if (req.user.role === 'admin') {
@@ -53,26 +63,90 @@ router.get('/google/callback', (req, res, next) => {
   });
 });
 
-// Get current user profile
-router.get('/profile', (req, res) => {
-  if (req.user) {
-    res.json({
+// Get current user profile - now requires authentication
+router.get('/profile', requireAuth, (req, res) => {
+  const user = req.user || req.session.user;
+  res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name || user.firstName,
+      lastName: user.last_name || user.lastName,
+      displayName: user.display_name || `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
+      role: user.role,
+      username: user.username // For legacy compatibility
+    }
+  });
+});
+
+// Validate JWT token endpoint
+router.post('/validate-token', (req, res) => {
+  const token = req.body.token || req.headers.authorization?.split(' ')[1] || req.cookies.jwt_token;
+  
+  if (!token) {
+    return res.status(400).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = verifyJWT(token);
+    res.json({ 
+      valid: true, 
       user: {
-        id: req.user.id,
-        email: req.user.email,
-        firstName: req.user.first_name,
-        lastName: req.user.last_name,
-        displayName: req.user.display_name,
-        role: req.user.role
-      }
+        id: decoded.userId,
+        email: decoded.email,
+        role: decoded.role
+      },
+      expiresAt: decoded.exp
     });
-  } else {
-    res.status(401).json({ error: 'Not authenticated' });
+  } catch (error) {
+    res.status(401).json({ 
+      valid: false, 
+      error: error.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token'
+    });
+  }
+});
+
+// Refresh token endpoint
+router.post('/refresh-token', (req, res) => {
+  const token = req.body.token || req.headers.authorization?.split(' ')[1] || req.cookies.jwt_token;
+  
+  if (!token) {
+    return res.status(400).json({ error: 'No token provided' });
+  }
+  
+  try {
+    const decoded = verifyJWT(token);
+    const newToken = generateJWT({
+      id: decoded.userId,
+      email: decoded.email,
+      role: decoded.role
+    });
+    
+    // Set new token as cookie
+    res.cookie('jwt_token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    });
+    
+    res.json({ 
+      success: true, 
+      token: newToken,
+      expiresIn: '24h'
+    });
+  } catch (error) {
+    res.status(401).json({ 
+      error: error.name === 'TokenExpiredError' ? 'Token expired' : 'Invalid token'
+    });
   }
 });
 
 // Logout
 router.get('/logout', (req, res) => {
+  // Clear JWT token cookie
+  res.clearCookie('jwt_token');
+  
   req.logout((err) => {
     if (err) {
       console.error('Logout error:', err);
