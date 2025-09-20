@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "test": "echo \"No tests specified\" && exit 0",
+    "migrate": "node database/migrate.js",
+    "backup": "node database/backup.js backup"
   },
   "repository": {
     "type": "git",

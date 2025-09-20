@@ -64,6 +64,11 @@ backup-*
 *.backup
 *.bak
 
+# Database files (exclude database files and backups from version control)
+database/*.db
+database/backups/
+*.json.backup.*
+
 # Deployment files
 deployment/
 deployment_temp/
