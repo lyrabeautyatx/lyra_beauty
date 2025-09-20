@@ -66,11 +66,17 @@ For testing payments in sandbox mode, use Square's test card numbers:
 
 ## Production Deployment
 
-1. Replace sandbox credentials with production Square credentials
-2. Set up a proper database (PostgreSQL/MySQL) instead of JSON file storage
-3. Configure proper session store
-4. Add SSL/HTTPS
-5. Set up proper error logging
+This application uses GitHub Actions for automated deployment to AWS EC2.
+
+### Quick Start
+1. Configure GitHub secrets (see `DEPLOYMENT.md`)
+2. Push code to main branch
+3. Deployment happens automatically
+
+### Manual Setup
+Use `setup-ec2.sh` to prepare your EC2 instance with Node.js, PM2, and Nginx.
+
+For detailed deployment instructions, see `DEPLOYMENT.md`.
 
 ---
 
