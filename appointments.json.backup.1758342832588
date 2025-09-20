@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1757429938991,
+    "username": "user1",
+    "date": "2025-09-10",
+    "time": "09:30",
+    "service": "haircut",
+    "status": "confirmed"
+  },
+  {
+    "id": 1757429946607,
+    "username": "user1",
+    "date": "2025-09-10",
+    "time": "10:00",
+    "service": "haircut",
+    "status": "confirmed"
+  }
+]
