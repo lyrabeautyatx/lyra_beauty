@@ -38,46 +38,37 @@ class DatabaseMigration {
   async migrateUsers() {
     console.log('Migrating users...');
     
-    // Create default users from the hardcoded users in server.js
+    // Create default admin user for Google OAuth
+    // This user will need to log in via Google OAuth first, then can be promoted to admin
     const defaultUsers = [
       {
-        username: 'user1',
-        password: 'pass1',
-        role: 'user',
-        first_name: 'User',
-        last_name: 'One',
-        email: 'user1@lyrabeauty.com'
-      },
-      {
-        username: 'admin',
-        password: 'adminpass',
-        role: 'admin',
+        email: 'admin@lyrabeauty.com',
         first_name: 'Admin',
         last_name: 'User',
-        email: 'admin@lyrabeauty.com'
+        role: 'admin'
       }
     ];
 
     for (const user of defaultUsers) {
       try {
-        // Check if user already exists
+        // Check if user already exists by email
         const existingUser = await this.db.get(
-          'SELECT id FROM users WHERE username = ?',
-          [user.username]
+          'SELECT id FROM users WHERE email = ?',
+          [user.email]
         );
 
         if (!existingUser) {
           await this.db.run(`
-            INSERT INTO users (username, password, role, first_name, last_name, email)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `, [user.username, user.password, user.role, user.first_name, user.last_name, user.email]);
+            INSERT INTO users (email, first_name, last_name, role)
+            VALUES (?, ?, ?, ?)
+          `, [user.email, user.first_name, user.last_name, user.role]);
           
-          console.log(`✓ Created user: ${user.username}`);
+          console.log(`✓ Created user: ${user.email}`);
         } else {
-          console.log(`✓ User already exists: ${user.username}`);
+          console.log(`✓ User already exists: ${user.email}`);
         }
       } catch (error) {
-        console.error(`Error creating user ${user.username}:`, error);
+        console.error(`Error creating user ${user.email}:`, error);
       }
     }
   }
@@ -162,14 +153,35 @@ class DatabaseMigration {
 
     for (const appointment of appointments) {
       try {
-        // Find user by username
-        const user = await this.db.get(
-          'SELECT id FROM users WHERE username = ?',
-          [appointment.username]
-        );
+        // For legacy appointments with username, create a user if one doesn't exist
+        let user = null;
+        if (appointment.username) {
+          // Create a temporary email for legacy users
+          const tempEmail = `${appointment.username}@lyrabeauty.com`;
+          
+          // Check if user exists by email
+          user = await this.db.get(
+            'SELECT id FROM users WHERE email = ?',
+            [tempEmail]
+          );
+          
+          // Create user if doesn't exist
+          if (!user) {
+            await this.db.run(`
+              INSERT INTO users (email, first_name, last_name, role)
+              VALUES (?, ?, ?, ?)
+            `, [tempEmail, appointment.username, 'User', 'customer']);
+            
+            user = await this.db.get(
+              'SELECT id FROM users WHERE email = ?',
+              [tempEmail]
+            );
+            console.log(`✓ Created legacy user: ${tempEmail}`);
+          }
+        }
 
         if (!user) {
-          console.log(`⚠ User not found for appointment ${appointment.id}: ${appointment.username}`);
+          console.log(`⚠ Could not create/find user for appointment ${appointment.id}`);
           continue;
         }
 

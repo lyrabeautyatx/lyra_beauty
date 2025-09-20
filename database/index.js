@@ -47,14 +47,12 @@ class Database {
       -- Users table with role-based access
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        email TEXT UNIQUE,
+        email TEXT UNIQUE NOT NULL,
         google_id TEXT UNIQUE,
         first_name TEXT NOT NULL,
         last_name TEXT NOT NULL,
         phone TEXT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        role TEXT CHECK(role IN ('customer', 'partner', 'admin', 'user')) DEFAULT 'customer',
+        role TEXT CHECK(role IN ('customer', 'partner', 'admin')) DEFAULT 'customer',
         partner_status TEXT CHECK(partner_status IN ('pending', 'approved', 'rejected', 'inactive')) DEFAULT NULL,
         has_used_coupon BOOLEAN DEFAULT FALSE,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -96,7 +94,7 @@ class Database {
       CREATE INDEX IF NOT EXISTS idx_appointments_user_id ON appointments(user_id);
       CREATE INDEX IF NOT EXISTS idx_appointments_service_id ON appointments(service_id);
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-      CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+      CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
     `;
 
     return this.runTransaction(schema);
