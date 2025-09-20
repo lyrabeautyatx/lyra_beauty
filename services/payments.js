@@ -2,68 +2,31 @@ const { SquareClient, SquareEnvironment } = require('square');
 const { randomUUID } = require('crypto');
 const { getDatabase } = require('../database');
 
-// Initialize Square client only if credentials are available
-let squareClient, paymentsApi, invoicesApi;
+// Initialize Square client
+const squareEnvironment = process.env.SQUARE_ENVIRONMENT === 'production' 
+  ? SquareEnvironment.Production 
+  : SquareEnvironment.Sandbox;
 
-try {
-  const squareEnvironment = process.env.SQUARE_ENVIRONMENT === 'production' 
-    ? SquareEnvironment.Production 
-    : SquareEnvironment.Sandbox;
+const squareClient = new SquareClient({
+  accessToken: process.env.SQUARE_ACCESS_TOKEN,
+  environment: squareEnvironment
+});
 
-  if (process.env.SQUARE_ACCESS_TOKEN) {
-    squareClient = new SquareClient({
-      accessToken: process.env.SQUARE_ACCESS_TOKEN,
-      environment: squareEnvironment
-    });
-
-    ({ paymentsApi, invoicesApi } = squareClient);
-    console.log('Square client initialized successfully');
-  } else {
-    console.warn('Square credentials not configured - payment functions will be placeholders');
-  }
-} catch (error) {
-  console.warn('Square SDK initialization failed:', error.message);
-}
+const { paymentsApi, invoicesApi } = squareClient;
 
 // Calculate down payment (20% of total)
 function calculateDownPayment(totalAmount) {
-  if (!totalAmount || totalAmount <= 0) {
-    throw new Error('Valid total amount is required for down payment calculation');
-  }
   return Math.floor(totalAmount * 0.20);
 }
 
 // Calculate remaining payment (80% of total)
 function calculateRemainingPayment(totalAmount) {
-  if (!totalAmount || totalAmount <= 0) {
-    throw new Error('Valid total amount is required for remaining payment calculation');
-  }
   const downPayment = calculateDownPayment(totalAmount);
   return totalAmount - downPayment;
 }
 
 // Process down payment (20% of service cost)
 async function processDownPayment(booking, sourceId, totalAmount) {
-  // Input validation
-  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
-    throw new Error('Invalid booking data provided');
-  }
-  if (!totalAmount || totalAmount <= 0 || !Number.isInteger(totalAmount)) {
-    throw new Error('Valid payment amount in cents is required');
-  }
-
-  if (!paymentsApi) {
-    console.log('Square API not configured - using placeholder for down payment');
-    const downPaymentAmount = calculateDownPayment(totalAmount);
-    return {
-      success: true,
-      paymentId: `placeholder_${Date.now()}`,
-      amount: downPaymentAmount,
-      remainingAmount: calculateRemainingPayment(totalAmount),
-      status: 'COMPLETED'
-    };
-  }
-
   const downPaymentAmount = calculateDownPayment(totalAmount);
   const remainingAmount = calculateRemainingPayment(totalAmount);
 
@@ -137,24 +100,6 @@ async function processDownPayment(booking, sourceId, totalAmount) {
 
 // Process full payment (100% of service cost)
 async function processFullPayment(booking, sourceId, totalAmount) {
-  // Input validation
-  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
-    throw new Error('Invalid booking data provided');
-  }
-  if (!totalAmount || totalAmount <= 0 || !Number.isInteger(totalAmount)) {
-    throw new Error('Valid payment amount in cents is required');
-  }
-
-  if (!paymentsApi) {
-    console.log('Square API not configured - using placeholder for full payment');
-    return {
-      success: true,
-      paymentId: `placeholder_full_${Date.now()}`,
-      amount: totalAmount,
-      status: 'COMPLETED'
-    };
-  }
-
   try {
     const idempotencyKey = randomUUID();
     
@@ -224,25 +169,6 @@ async function processFullPayment(booking, sourceId, totalAmount) {
 
 // Create invoice for remaining payment (80% of service cost)
 async function createRemainingPaymentInvoice(booking, remainingAmount, downPaymentId) {
-  // Input validation
-  if (!booking || !booking.serviceInfo || !booking.date || !booking.time) {
-    throw new Error('Invalid booking data provided');
-  }
-  if (!remainingAmount || remainingAmount <= 0) {
-    throw new Error('Valid remaining amount is required');
-  }
-
-  if (!invoicesApi) {
-    console.log('Square API not configured - using placeholder for invoice creation');
-    return {
-      success: true,
-      invoiceId: `placeholder_invoice_${Date.now()}`,
-      invoiceNumber: `INV-${booking.date}-${booking.time}`.replace(/[^a-zA-Z0-9-]/g, ''),
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      amount: remainingAmount
-    };
-  }
-
   try {
     const invoiceRequest = {
       requestMethod: 'EMAIL',
@@ -367,10 +293,85 @@ async function createRemainingPaymentInvoice(booking, remainingAmount, downPayme
   }
 }
 
+// Get payment details from Square
+async function getPaymentDetails(paymentId) {
+  try {
+    const response = await paymentsApi.getPayment(paymentId);
+    return response.result.payment;
+  } catch (error) {
+    console.error('Error getting payment details:', error);
+    return null;
+  }
+}
+
+// Refund payment (used for cancellations)
+async function refundPayment(paymentId, refundAmount) {
+  try {
+    const idempotencyKey = randomUUID();
+    
+    const refund = {
+      amountMoney: {
+        amount: refundAmount,
+        currency: 'USD'
+      },
+      paymentId,
+      idempotencyKey,
+      reason: 'Customer cancellation'
+    };
+
+    console.log('Processing refund:', {
+      paymentId,
+      amount: refundAmount
+    });
+
+    const response = await paymentsApi.refundPayment(refund);
+    
+    if (response.result.refund) {
+      const refundResult = response.result.refund;
+      
+      console.log('Refund successful:', {
+        refundId: refundResult.id,
+        status: refundResult.status,
+        amount: refundResult.amountMoney.amount
+      });
+
+      return {
+        success: true,
+        refundId: refundResult.id,
+        amount: refundAmount,
+        status: refundResult.status
+      };
+    } else {
+      console.error('Refund failed: No refund object in response');
+      return {
+        success: false,
+        error: 'Refund processing failed'
+      };
+    }
+  } catch (error) {
+    console.error('Refund error:', error);
+    
+    // Extract useful error information
+    let errorMessage = 'Refund processing failed';
+    
+    if (error.result && error.result.errors) {
+      const squareError = error.result.errors[0];
+      errorMessage = squareError.detail || squareError.code || errorMessage;
+    }
+    
+    return {
+      success: false,
+      error: errorMessage
+    };
+  }
+}
+
 module.exports = {
   processDownPayment,
   processFullPayment,
   createRemainingPaymentInvoice,
   calculateDownPayment,
-  calculateRemainingPayment
+  calculateRemainingPayment,
+  getPaymentDetails,
+  refundPayment
 };

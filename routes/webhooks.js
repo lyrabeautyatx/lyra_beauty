@@ -1,9 +1,17 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getDatabase } = require('../database');
+
 const router = express.Router();
 
-// Enhanced Square webhook signature verification
+// Middleware to capture raw body for signature verification on Square endpoint only
+router.use('/square', express.raw({ type: 'application/json' }));
+
+// Use regular JSON parsing for other endpoints
+router.use('/test', express.json());
+router.use('/health', express.json());
+
+// Square webhook signature verification
 function verifySquareSignature(body, signature, signatureKey) {
   if (!signature || !signatureKey) {
     console.warn('Missing signature or signature key for webhook verification');
@@ -24,80 +32,99 @@ function verifySquareSignature(body, signature, signatureKey) {
   }
 }
 
-// Enhanced middleware to verify Square webhook signatures
-const verifySignature = (req, res, next) => {
+// Square webhook endpoint
+router.post('/square', async (req, res) => {
+  console.log('Received Square webhook:', {
+    headers: req.headers,
+    bodyLength: req.body ? req.body.length : 0
+  });
+
   try {
-    const signature = req.headers['x-square-hmacsha256-signature'] || req.headers['x-square-signature'];
+    // Get signature from headers
+    const signature = req.headers['x-square-hmacsha256-signature'];
     const signatureKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-    const body = req.rawBody || JSON.stringify(req.body);
-    
-    // Skip signature verification in development if not configured
-    if (process.env.NODE_ENV !== 'production' && !signatureKey) {
-      console.log('Skipping webhook signature verification in development mode');
-      return next();
-    }
-    
-    if (!verifySquareSignature(body, signature, signatureKey)) {
-      console.error('Square webhook signature verification failed');
-      return res.status(401).json({ error: 'Invalid webhook signature' });
-    }
-    
-    next();
-  } catch (error) {
-    console.error('Webhook signature verification failed:', error);
-    res.status(401).json({ error: 'Webhook verification failed' });
-  }
-};
 
-// Enhanced Square webhook endpoint for payment events
-router.post('/square', express.raw({ type: 'application/json' }), (req, res, next) => {
-  req.rawBody = req.body;
-  next();
-}, express.json(), verifySignature, async (req, res) => {
-  try {
-    const { type, data, event_id, created_at } = req.body;
+    // Verify signature in production/staging
+    if (process.env.NODE_ENV === 'production' || process.env.SQUARE_ENVIRONMENT === 'production') {
+      if (!verifySquareSignature(req.body, signature, signatureKey)) {
+        console.error('Square webhook signature verification failed');
+        return res.status(401).json({ error: 'Signature verification failed' });
+      }
+    } else {
+      console.log('Skipping signature verification in development mode');
+    }
+
+    // Parse the webhook body (req.body is a Buffer when using express.raw)
+    let bodyString;
+    let event;
     
-    console.log('Received Square webhook:', {
-      type,
-      eventId: event_id,
-      createdAt: created_at
+    if (Buffer.isBuffer(req.body)) {
+      bodyString = req.body.toString();
+    } else if (typeof req.body === 'string') {
+      bodyString = req.body;
+    } else {
+      // If body is already parsed as JSON object
+      event = req.body;
+      bodyString = JSON.stringify(req.body);
+    }
+    
+    if (!event) {
+      event = JSON.parse(bodyString);
+    }
+    console.log('Square webhook event received:', {
+      type: event.type,
+      eventId: event.event_id,
+      createdAt: event.created_at
     });
-    
-    switch (type) {
-      case 'payment.created':
-        await handlePaymentCreated(data.object.payment);
-        break;
-        
-      case 'payment.updated':
-        await handlePaymentUpdated(data.object.payment);
-        break;
-        
-      case 'invoice.payment_made':
-        await handleInvoicePaymentMade(data.object.invoice);
-        break;
 
-      case 'invoice.published':
-        await handleInvoicePublished(data.object.invoice);
-        break;
+    // Handle different webhook event types
+    await handleSquareWebhookEvent(event);
 
-      case 'invoice.payment_request.sent':
-        await handleInvoicePaymentRequestSent(data.object.invoice);
-        break;
-        
-      default:
-        console.log('Unhandled webhook type:', type);
-    }
-    
-    // Always respond with 200 to acknowledge receipt
-    res.status(200).json({ status: 'received', eventId: event_id });
-    
+    // Acknowledge receipt
+    res.status(200).json({ status: 'received' });
+
   } catch (error) {
-    console.error('Webhook processing error:', error);
+    console.error('Error processing Square webhook:', error);
     res.status(500).json({ error: 'Webhook processing failed' });
   }
 });
 
-// Enhanced webhook event handlers with database integration
+// Handle Square webhook events
+async function handleSquareWebhookEvent(event) {
+  const { type, data } = event;
+
+  try {
+    switch (type) {
+      case 'payment.created':
+        await handlePaymentCreated(data.object.payment);
+        break;
+      
+      case 'payment.updated':
+        await handlePaymentUpdated(data.object.payment);
+        break;
+      
+      case 'invoice.payment_made':
+        await handleInvoicePaymentMade(data.object.invoice);
+        break;
+      
+      case 'invoice.published':
+        await handleInvoicePublished(data.object.invoice);
+        break;
+      
+      case 'invoice.payment_request.sent':
+        await handleInvoicePaymentRequestSent(data.object.invoice);
+        break;
+
+      default:
+        console.log(`Unhandled Square webhook event type: ${type}`);
+    }
+  } catch (error) {
+    console.error(`Error handling Square webhook event ${type}:`, error);
+    throw error;
+  }
+}
+
+// Handle payment created events
 async function handlePaymentCreated(payment) {
   console.log('Processing payment.created webhook:', {
     paymentId: payment.id,
@@ -109,9 +136,10 @@ async function handlePaymentCreated(payment) {
     const db = getDatabase();
     if (!db.isReady()) {
       await db.connect();
+      await db.initializeTables();
     }
     
-    // Record payment in database
+    // Update payment record in database
     await db.run(`
       INSERT OR REPLACE INTO payments (
         square_payment_id, appointment_id, amount, type, status, 
@@ -119,7 +147,7 @@ async function handlePaymentCreated(payment) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       payment.id,
-      null, // Will be linked later when appointment is associated
+      null, // Will be updated when we link to appointment
       payment.amount_money?.amount || 0,
       'square_payment',
       payment.status,
@@ -130,10 +158,11 @@ async function handlePaymentCreated(payment) {
     console.log(`Payment ${payment.id} recorded in database`);
   } catch (error) {
     console.error('Error recording payment in database:', error);
-    // Don't throw - we still want to acknowledge the webhook
+    throw error;
   }
 }
 
+// Handle payment updated events
 async function handlePaymentUpdated(payment) {
   console.log('Processing payment.updated webhook:', {
     paymentId: payment.id,
@@ -144,16 +173,17 @@ async function handlePaymentUpdated(payment) {
     const db = getDatabase();
     if (!db.isReady()) {
       await db.connect();
+      await db.initializeTables();
     }
     
-    // Update payment status
+    // Update payment status in database
     await db.run(`
       UPDATE payments 
       SET status = ?, updated_at = ?
       WHERE square_payment_id = ?
     `, [payment.status, new Date().toISOString(), payment.id]);
 
-    // If payment is completed, update related appointments
+    // If payment is completed, update appointment status
     if (payment.status === 'COMPLETED') {
       await db.run(`
         UPDATE appointments 
@@ -168,36 +198,50 @@ async function handlePaymentUpdated(payment) {
     console.log(`Payment ${payment.id} status updated to ${payment.status}`);
   } catch (error) {
     console.error('Error updating payment status:', error);
+    throw error;
   }
 }
 
+// Handle invoice payment made events
 async function handleInvoicePaymentMade(invoice) {
   console.log('Processing invoice.payment_made webhook:', {
     invoiceId: invoice.id,
     status: invoice.invoice_request?.request_type
   });
-  
-  // Handle remaining payment invoice completion
-  console.log(`Invoice ${invoice.id} payment received`);
+
+  try {
+    const db = getDatabase();
+    
+    // Update invoice payment status
+    // This would typically update the remaining payment for an appointment
+    console.log(`Invoice ${invoice.id} payment received`);
+  } catch (error) {
+    console.error('Error processing invoice payment:', error);
+    throw error;
+  }
 }
 
+// Handle invoice published events
 async function handleInvoicePublished(invoice) {
   console.log('Processing invoice.published webhook:', {
     invoiceId: invoice.id
   });
   
+  // Log that invoice was published and sent to customer
   console.log(`Invoice ${invoice.id} published and sent to customer`);
 }
 
+// Handle invoice payment request sent events
 async function handleInvoicePaymentRequestSent(invoice) {
   console.log('Processing invoice.payment_request.sent webhook:', {
     invoiceId: invoice.id
   });
   
+  // Log that payment request was sent
   console.log(`Invoice payment request sent for ${invoice.id}`);
 }
 
-// Health check endpoint for webhook monitoring
+// Health check endpoint for webhooks
 router.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
@@ -206,8 +250,8 @@ router.get('/health', (req, res) => {
   });
 });
 
-// Development test endpoint
-router.post('/test', express.json(), (req, res) => {
+// Webhook test endpoint (for development)
+router.post('/test', (req, res) => {
   if (process.env.NODE_ENV === 'production') {
     return res.status(404).json({ error: 'Test endpoint not available in production' });
   }
