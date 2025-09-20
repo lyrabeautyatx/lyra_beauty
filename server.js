@@ -171,7 +171,8 @@ app.get('/payment', requireAuth, (req, res) => {
     downPaymentAmount,
     remainingAmount,
     applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
-    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID' // Replace with your Square Location ID
+    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID', // Replace with your Square Location ID
+    moment
   });
 });
 
