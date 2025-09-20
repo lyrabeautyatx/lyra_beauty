@@ -1,0 +1,99 @@
+name: Dependency Conflict Prevention
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths: 
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout PR
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Check for package.json changes
+      id: package-changes
+      run: |
+        if git diff --name-only origin/main...HEAD | grep -q "package.json"; then
+          echo "package_changed=true" >> $GITHUB_OUTPUT
+          echo "📦 package.json was modified in this PR"
+        else
+          echo "package_changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Check for package-lock conflicts
+      if: steps.package-changes.outputs.package_changed == 'true'
+      run: |
+        echo "🔍 Checking for package-lock.json conflicts..."
+        
+        # Try to install dependencies
+        npm ci
+        
+        # Check if package-lock.json is up to date
+        npm install --package-lock-only
+        
+        if git diff --exit-code package-lock.json; then
+          echo "✅ package-lock.json is consistent"
+        else
+          echo "❌ package-lock.json needs to be regenerated"
+          echo "Run 'npm install' and commit the updated package-lock.json"
+          exit 1
+        fi
+        
+    - name: Validate new dependencies
+      if: steps.package-changes.outputs.package_changed == 'true'
+      run: |
+        echo "🔍 Checking for new dependencies..."
+        
+        # Get list of new dependencies
+        git show origin/main:package.json > old-package.json
+        
+        # Extract dependencies and compare
+        node -e "
+          const oldPkg = require('./old-package.json');
+          const newPkg = require('./package.json');
+          
+          const oldDeps = {...(oldPkg.dependencies || {}), ...(oldPkg.devDependencies || {})};
+          const newDeps = {...(newPkg.dependencies || {}), ...(newPkg.devDependencies || {})};
+          
+          const added = Object.keys(newDeps).filter(dep => !oldDeps[dep]);
+          
+          if (added.length > 0) {
+            console.log('🆕 New dependencies added:', added.join(', '));
+            console.log('✅ Make sure these are necessary for your feature');
+          } else {
+            console.log('✅ No new dependencies added');
+          }
+        "
+        
+    - name: Comment on PR
+      if: steps.package-changes.outputs.package_changed == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 📦 Dependency Changes Detected
+            
+            This PR modifies \`package.json\`. Please ensure:
+            
+            ✅ New dependencies are necessary for your feature
+            ✅ \`package-lock.json\` is up-to-date (\`npm install\`)
+            ✅ No conflicting dependency versions
+            
+            **Tip:** To avoid conflicts, coordinate dependency changes in our development workflow.`
+          });

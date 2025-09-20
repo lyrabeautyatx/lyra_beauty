@@ -1,0 +1,55 @@
+name: Auto-Fix Package Lock
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'package.json'
+
+jobs:
+  regenerate-lock:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Clean install and regenerate lock
+      run: |
+        echo "🔧 Regenerating package-lock.json after package.json changes..."
+        
+        # Remove existing lock file
+        rm -f package-lock.json
+        
+        # Clean install to generate fresh lock file
+        npm install
+        
+    - name: Check if lock file changed
+      id: lock-changes
+      run: |
+        if git diff --exit-code package-lock.json; then
+          echo "lock_changed=false" >> $GITHUB_OUTPUT
+          echo "✅ package-lock.json is already up-to-date"
+        else
+          echo "lock_changed=true" >> $GITHUB_OUTPUT
+          echo "🔄 package-lock.json needs to be updated"
+        fi
+        
+    - name: Commit updated lock file
+      if: steps.lock-changes.outputs.lock_changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        git add package-lock.json
+        git commit -m "🔧 Auto-regenerate package-lock.json after dependency changes"
+        
+        git push

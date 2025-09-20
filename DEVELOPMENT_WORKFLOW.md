@@ -1,4 +1,19 @@
-# Development Workflow Instructions
+# Development Workfl- Work on your feature branch
+- Commit changes regularly with descriptive messages
+- Reference the issue in commits: `feat: implement feature (closes #[NUMBER])`
+
+### 📦 **CRITICAL: Dependency Management** (Prevents Package Conflicts)
+
+**For issues WITHOUT new dependencies:**
+- Use existing packages in package.json
+- No special steps needed
+
+**For issues WITH new dependencies:**
+- Create separate dependency PR first (see DEPENDENCY_MANAGEMENT_STRATEGY.md)
+- Wait for dependency PR to merge
+- Then create your feature PR
+
+### 🔄 **CRITICAL: Stay Current with Main** (Prevents Conflicts)structions
 
 **IMPORTANT:** Follow these steps exactly to prevent conflicts and ensure clean integration:
 
