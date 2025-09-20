@@ -1,25 +1,32 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 
 class Database {
   constructor() {
     this.db = null;
-    this.dbPath = path.join(__dirname, 'lyra_beauty.db');
     this.ready = false;
   }
 
   async connect() {
     return new Promise((resolve, reject) => {
-      this.db = new sqlite3.Database(this.dbPath, (err) => {
+      // Create database directory if it doesn't exist
+      const dbDir = path.dirname(process.env.DATABASE_PATH || './database/lyra_beauty.db');
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
+      // Use in-memory database for development/testing if DATABASE_PATH not set
+      const dbPath = process.env.DATABASE_PATH || ':memory:';
+      
+      this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
           console.error('Error opening database:', err);
           reject(err);
         } else {
-          console.log('Connected to SQLite database');
+          console.log('Connected to SQLite database:', dbPath);
           this.ready = true;
-          this.initializeTables()
-            .then(() => resolve())
-            .catch(reject);
+          this.initializeTables().then(resolve).catch(reject);
         }
       });
     });
@@ -27,12 +34,12 @@ class Database {
 
   async initializeTables() {
     return new Promise((resolve, reject) => {
-      // Create users table with basic schema
+      // Create users table
       const createUsersTable = `
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           google_id TEXT UNIQUE,
-          email TEXT UNIQUE,
+          email TEXT,
           first_name TEXT,
           last_name TEXT,
           username TEXT UNIQUE,
@@ -51,10 +58,8 @@ class Database {
           reject(err);
         } else {
           console.log('Users table initialized');
-          // Insert default admin user if not exists
-          this.createDefaultUsers()
-            .then(() => resolve())
-            .catch(reject);
+          // Create default admin user for testing
+          this.createDefaultUsers().then(resolve).catch(reject);
         }
       });
     });
@@ -62,15 +67,14 @@ class Database {
 
   async createDefaultUsers() {
     return new Promise((resolve, reject) => {
-      // Check if admin user exists
-      this.db.get('SELECT id FROM users WHERE role = "admin"', (err, row) => {
+      // Check if any users exist
+      this.db.get('SELECT COUNT(*) as count FROM users', (err, row) => {
         if (err) {
-          console.error('Error checking for admin user:', err);
           reject(err);
           return;
         }
 
-        if (!row) {
+        if (row.count === 0) {
           // Create default admin user
           const insertAdmin = `
             INSERT INTO users (username, password, email, first_name, last_name, role)
@@ -79,7 +83,7 @@ class Database {
           
           this.db.run(insertAdmin, (err) => {
             if (err) {
-              console.error('Error creating admin user:', err);
+              console.error('Error creating default admin:', err);
               reject(err);
             } else {
               console.log('Default admin user created');
@@ -97,9 +101,9 @@ class Database {
     return this.ready;
   }
 
-  async get(sql, params = []) {
+  async get(query, params = []) {
     return new Promise((resolve, reject) => {
-      this.db.get(sql, params, (err, row) => {
+      this.db.get(query, params, (err, row) => {
         if (err) {
           reject(err);
         } else {
@@ -109,9 +113,9 @@ class Database {
     });
   }
 
-  async all(sql, params = []) {
+  async all(query, params = []) {
     return new Promise((resolve, reject) => {
-      this.db.all(sql, params, (err, rows) => {
+      this.db.all(query, params, (err, rows) => {
         if (err) {
           reject(err);
         } else {
@@ -121,30 +125,37 @@ class Database {
     });
   }
 
-  async run(sql, params = []) {
+  async run(query, params = []) {
     return new Promise((resolve, reject) => {
-      this.db.run(sql, params, function(err) {
+      this.db.run(query, params, function(err) {
         if (err) {
           reject(err);
         } else {
-          resolve({ 
-            id: this.lastID, 
-            changes: this.changes 
-          });
+          resolve({ id: this.lastID, changes: this.changes });
         }
       });
     });
   }
 
-  close() {
-    if (this.db) {
-      this.db.close();
-      this.ready = false;
-    }
+  async close() {
+    return new Promise((resolve, reject) => {
+      if (this.db) {
+        this.db.close((err) => {
+          if (err) {
+            reject(err);
+          } else {
+            this.ready = false;
+            console.log('Database connection closed');
+            resolve();
+          }
+        });
+      } else {
+        resolve();
+      }
+    });
   }
 }
 
-// Singleton instance
 let dbInstance = null;
 
 function getDatabase() {

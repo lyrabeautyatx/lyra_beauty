@@ -149,10 +149,23 @@ async function updateUserRole(userId, role) {
 }
 
 function getUserPermissions(user) {
+  if (!user) return null;
+  
+  // Return boolean permission object for easier use
+  const permissions = {
+    canBook: user.role === 'customer' || user.role === 'admin',
+    canPartner: user.role === 'partner' || user.role === 'admin', 
+    isAdmin: user.role === 'admin',
+    canUsePartnerSystem: user.role === 'partner' || user.role === 'admin',
+    canManageUsers: user.role === 'admin',
+    canApprovePartners: user.role === 'admin'
+  };
+  
+  // Also include array of specific permissions for detailed checks
   const rolePermissions = {
     customer: [
       'book_appointments',
-      'view_own_appointments',
+      'view_own_appointments', 
       'pay_for_services',
       'use_coupons'
     ],
@@ -176,7 +189,9 @@ function getUserPermissions(user) {
     ]
   };
   
-  return rolePermissions[user.role] || [];
+  permissions.actions = rolePermissions[user.role] || [];
+  
+  return permissions;
 }
 
 // Initialize with a default admin user if no users exist
