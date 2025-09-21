@@ -420,7 +420,6 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
     if (paymentType === 'down') {
       // Process down payment (20%)
       paymentResult = await processDownPayment(booking, sourceId, totalAmount);
-      
       if (paymentResult.success) {
         // Save the appointment to database (down payment)
         const appointmentId = await saveAppointment({
@@ -433,17 +432,19 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           paymentId: paymentResult.paymentId,
           paidAmount: paymentResult.amount
         });
-        
+        // Store payment record
+        await db.run(
+          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [appointmentId, paymentResult.paymentId, paymentResult.amount, 'down_payment', paymentResult.status]
+        );
         // Create invoice for remaining payment
         const invoiceResult = await createRemainingPaymentInvoice(
           booking, 
           paymentResult.remainingAmount, 
           paymentResult.paymentId
         );
-        
         // Clear pending booking
         delete req.session.pendingBooking;
-        
         res.json({ 
           success: true, 
           appointmentId,
@@ -473,6 +474,11 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           paymentId: paymentResult.paymentId,
           paidAmount: totalAmount
         });
+        // Store payment record
+        await db.run(
+          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [appointmentId, paymentResult.paymentId, totalAmount, 'full_payment', paymentResult.status]
+        );
         // Clear pending booking
         delete req.session.pendingBooking;
         res.json({ 

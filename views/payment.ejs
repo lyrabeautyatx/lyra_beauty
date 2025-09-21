@@ -40,26 +40,10 @@
       <h3>Payment Information</h3>
       <p><em>This is a demo payment form. In production, this would integrate with Square's secure payment system.</em></p>
       
-      <div class="form-group">
-        <label>Card Number:</label>
-        <input type="text" id="card-number" placeholder="4111 1111 1111 1111" maxlength="19">
+      <div class="form-group mb-3">
+        <label>Card Details:</label>
+        <div id="card-container"></div>
       </div>
-      
-      <div class="form-group">
-        <label>Expiry Date:</label>
-        <input type="text" id="expiry" placeholder="MM/YY" maxlength="5">
-      </div>
-      
-      <div class="form-group">
-        <label>CVV:</label>
-        <input type="text" id="cvv" placeholder="123" maxlength="4">
-      </div>
-      
-      <div class="form-group">
-        <label>Cardholder Name:</label>
-        <input type="text" id="cardholder" placeholder="John Doe">
-      </div>
-      
       <button id="pay-button" type="button" class="btn btn-primary">
         <span id="pay-button-text">Pay $<%= (downPaymentAmount / 100).toFixed(2) %> (Down Payment)</span>
       </button>
@@ -70,11 +54,15 @@
   <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
   </div>
 
+  <!-- Square Web Payments SDK -->
+  <script type="text/javascript" src="https://sandbox.web.squarecdn.com/v1/square.js"></script>
   <script>
-  var totalAmount = Number('<%= totalAmount %>');
-  var downPaymentAmount = Number('<%= downPaymentAmount %>');
-  var remainingAmount = Number('<%= remainingAmount %>');
-    
+    const applicationId = "<%= applicationId %>";
+    const locationId = "<%= locationId %>";
+    var totalAmount = Number('<%= totalAmount %>');
+    var downPaymentAmount = Number('<%= downPaymentAmount %>');
+    var remainingAmount = Number('<%= remainingAmount %>');
+
     // Update button text when payment type changes
     document.querySelectorAll('input[name="payment-type"]').forEach(radio => {
       radio.addEventListener('change', function() {
@@ -86,91 +74,67 @@
         }
       });
     });
-    
-    document.getElementById('pay-button').addEventListener('click', async function() {
-      const button = this;
-      const statusDiv = document.getElementById('payment-status');
-      
-      // Get selected payment type
-      const paymentType = document.querySelector('input[name="payment-type"]:checked').value;
-      
-      // Basic validation
-      const cardNumber = document.getElementById('card-number').value;
-      const expiry = document.getElementById('expiry').value;
-      const cvv = document.getElementById('cvv').value;
-      const cardholder = document.getElementById('cardholder').value;
-      
-      if (!cardNumber || !expiry || !cvv || !cardholder) {
-        statusDiv.innerHTML = '<p class="error">Please fill in all payment fields</p>';
+
+    async function initializeSquare() {
+      if (!window.Square) {
+        document.getElementById('payment-status').innerHTML = '<p class="error">Square SDK failed to load.</p>';
         return;
       }
-      
-      button.disabled = true;
-      statusDiv.innerHTML = '<p>Processing payment...</p>';
-      
-      try {
-        const response = await fetch('/process-payment', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sourceId: 'mock_card_source',
-            paymentType: paymentType,
-            cardDetails: {
-              cardNumber,
-              expiry,
-              cvv,
-              cardholder
-            }
-          }),
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-          let successMessage = 'Payment successful!';
-          if (paymentType === 'down') {
-            successMessage += ` Down payment of $${(result.paidAmount / 100).toFixed(2)} processed.`;
-            if (result.remainingAmount > 0) {
-              successMessage += ` Remaining balance of $${(result.remainingAmount / 100).toFixed(2)} will be invoiced separately.`;
-            }
-            if (result.invoiceId) {
-              successMessage += ` Invoice created: ${result.invoiceId}`;
-            }
-          } else {
-            successMessage += ` Full payment of $${(result.paidAmount / 100).toFixed(2)} processed.`;
+      const payments = window.Square.payments(applicationId, locationId);
+      const card = await payments.card();
+      await card.attach('#card-container');
+
+      document.getElementById('pay-button').addEventListener('click', async function() {
+        const button = this;
+        const statusDiv = document.getElementById('payment-status');
+        button.disabled = true;
+        statusDiv.innerHTML = '<p>Processing payment...</p>';
+
+        // Get selected payment type
+        const paymentType = document.querySelector('input[name="payment-type"]:checked').value;
+
+        try {
+          const result = await card.tokenize();
+          if (result.status !== 'OK') {
+            throw new Error(result.errors?.[0]?.message || 'Card tokenization failed');
           }
-          successMessage += ' Redirecting to your appointments...';
-          
-          statusDiv.innerHTML = `<p class="success">${successMessage}</p>`;
-          setTimeout(() => {
-            window.location.href = '/my-appointments';
-          }, 3000);
-        } else {
-          throw new Error(result.error || 'Payment failed');
+          const response = await fetch('/process-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sourceId: result.token,
+              paymentType: paymentType
+            })
+          });
+          const data = await response.json();
+          if (data.success) {
+            let successMessage = 'Payment successful!';
+            if (paymentType === 'down') {
+              successMessage += ` Down payment of $${(data.paidAmount / 100).toFixed(2)} processed.`;
+              if (data.remainingAmount > 0) {
+                successMessage += ` Remaining balance of $${(data.remainingAmount / 100).toFixed(2)} will be invoiced separately.`;
+              }
+              if (data.invoiceId) {
+                successMessage += ` Invoice created: ${data.invoiceId}`;
+              }
+            } else {
+              successMessage += ` Full payment of $${(data.paidAmount / 100).toFixed(2)} processed.`;
+            }
+            successMessage += ' Redirecting to your appointments...';
+            statusDiv.innerHTML = `<p class="success">${successMessage}</p>`;
+            setTimeout(() => {
+              window.location.href = '/my-appointments';
+            }, 3000);
+          } else {
+            throw new Error(data.error || 'Payment failed');
+          }
+        } catch (error) {
+          button.disabled = false;
+          statusDiv.innerHTML = `<p class="error">Payment failed: ${error.message}</p>`;
         }
-      } catch (error) {
-        button.disabled = false;
-        statusDiv.innerHTML = `<p class="error">Payment failed: ${error.message}</p>`;
-      }
-    });
-    
-    // Format card number input
-    document.getElementById('card-number').addEventListener('input', function(e) {
-      let value = e.target.value.replace(/\s/g, '').replace(/[^0-9]/gi, '');
-      let formattedValue = value.match(/.{1,4}/g)?.join(' ') || value;
-      e.target.value = formattedValue;
-    });
-    
-    // Format expiry input
-    document.getElementById('expiry').addEventListener('input', function(e) {
-      let value = e.target.value.replace(/\D/g, '');
-      if (value.length >= 2) {
-        value = value.substring(0, 2) + '/' + value.substring(2, 4);
-      }
-      e.target.value = value;
-    });
+      });
+    }
+    document.addEventListener('DOMContentLoaded', initializeSquare);
   </script>
 </body>
 </html>
