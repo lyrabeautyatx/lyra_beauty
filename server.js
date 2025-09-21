@@ -1,3 +1,42 @@
+// ...existing code...
+// ...existing code...
+
+// Place this after app, middleware, and db are initialized
+// Cancel appointment route
+function setupCancelAppointmentRoute(app, db, requireAuth) {
+  app.post('/appointments/:id/cancel', requireAuth, async (req, res) => {
+    const appointmentId = req.params.id;
+    try {
+      // Only allow user to cancel their own appointment
+      const appointment = await db.get(`SELECT * FROM appointments a JOIN users u ON a.user_id = u.id WHERE a.id = ?`, [appointmentId]);
+      if (!appointment) {
+        return res.status(404).send('Appointment not found');
+      }
+      if (appointment.username !== req.session.user.username) {
+        return res.status(403).send('Unauthorized');
+      }
+      if (appointment.status === 'cancelled') {
+        return res.redirect('/my-appointments');
+      }
+      // Update status to cancelled
+      await db.run(`UPDATE appointments SET status = 'cancelled' WHERE id = ?`, [appointmentId]);
+      // Optionally: add audit log, send notification, etc.
+      res.redirect('/my-appointments');
+    } catch (error) {
+      console.error('Error cancelling appointment:', error);
+      res.status(500).send('Failed to cancel appointment');
+    }
+  });
+}
+// ...existing code...
+// ...existing code...
+
+// ...existing code...
+// ...existing code...
+
+// Register cancel appointment route after all middleware/routes, just before app.listen
+// (MUST be after all other app and db setup)
+
 // Load environment variables FIRST - before any other imports
 require('dotenv').config();
 
@@ -87,17 +126,29 @@ async function getServicePricing() {
 async function loadAppointments() {
   try {
     const appointments = await db.all(`
-      SELECT a.*, u.username, s.service_key, s.name as service_name, s.price as service_price
+      SELECT a.*, u.username, u.first_name, u.last_name, u.email, s.service_key, s.name as service_name, s.price as service_price
       FROM appointments a
       LEFT JOIN users u ON a.user_id = u.id
       LEFT JOIN services s ON a.service_id = s.id
       ORDER BY a.date, a.time
     `);
     
+    // Mark past appointments as completed if not already cancelled or completed
+    const now = new Date();
+    for (const apt of appointments) {
+      const aptDateTime = new Date(`${apt.date}T${apt.time}`);
+      if (apt.status !== 'cancelled' && apt.status !== 'completed' && aptDateTime < now) {
+        await db.run(`UPDATE appointments SET status = 'completed' WHERE id = ?`, [apt.id]);
+        apt.status = 'completed';
+      }
+    }
     // Transform to match legacy format for compatibility
     return appointments.map(apt => ({
       id: apt.id,
       username: apt.username,
+      firstName: apt.first_name,
+      lastName: apt.last_name,
+      email: apt.email,
       date: apt.date,
       time: apt.time,
       service: apt.service_key,
@@ -538,6 +589,7 @@ app.get('/logout', (req, res) => {
   });
 });
 
+setupCancelAppointmentRoute(app, db, requireAuth);
 app.listen(PORT, async () => {
   // Initialize database before starting server
   await initializeDatabase();

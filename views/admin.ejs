@@ -23,7 +23,17 @@
       <div class="appointments-list">
         <% appointments.forEach(appointment => { %>
           <div class="appointment-card">
-            <h4><%= appointment.username %> - <%= appointment.serviceInfo ? appointment.serviceInfo.name : appointment.service %></h4>
+            <h4>
+              <% if (appointment.firstName || appointment.lastName) { %>
+                <%= appointment.firstName %> <%= appointment.lastName %>
+              <% } else { %>
+                <%= appointment.username %>
+              <% } %>
+              <% if (appointment.email) { %>
+                (<%= appointment.email %>)
+              <% } %>
+              - <%= appointment.serviceInfo ? appointment.serviceInfo.name : appointment.service %>
+            </h4>
             <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
             <p><strong>Time:</strong> <%= appointment.time %></p>
             <p><strong>Status:</strong> <%= appointment.status %></p>

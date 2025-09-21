@@ -9,36 +9,82 @@
   <div class="container">
     <h2>My Appointments</h2>
     
-    <% if (appointments.length > 0) { %>
+
+    <% const upcoming = appointments.filter(a => a.status !== 'completed' && a.status !== 'cancelled'); %>
+    <% const history = appointments.filter(a => a.status === 'completed' || a.status === 'cancelled'); %>
+
+    <% if (upcoming.length > 0) { %>
+      <h4>Upcoming Appointments</h4>
       <div class="appointments-list">
-        <% appointments.forEach(appointment => { %>
+        <% upcoming.forEach(appointment => { %>
           <div class="appointment-card">
             <h3><%= appointment.serviceInfo ? appointment.serviceInfo.name : appointment.service %></h3>
             <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
             <p><strong>Time:</strong> <%= appointment.time %></p>
             <p><strong>Status:</strong> <%= appointment.status %></p>
-            
             <% if (appointment.paymentType && appointment.paymentStatus) { %>
               <div class="payment-info">
                 <h4>Payment Information</h4>
                 <p><strong>Payment Type:</strong> <%= appointment.paymentType.replace('_', ' ').toUpperCase() %></p>
                 <p><strong>Payment Status:</strong> <%= appointment.paymentStatus.replace('_', ' ').toUpperCase() %></p>
-                
                 <% if (appointment.totalAmount) { %>
                   <p><strong>Total Amount:</strong> $<%= (appointment.totalAmount / 100).toFixed(2) %></p>
                 <% } %>
-                
                 <% if (appointment.paidAmount) { %>
                   <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
                 <% } %>
-                
                 <% if (appointment.remainingAmount && appointment.remainingAmount > 0) { %>
                   <p><strong>Remaining Balance:</strong> $<%= (appointment.remainingAmount / 100).toFixed(2) %></p>
                   <% if (appointment.paymentData && appointment.paymentData.invoiceId) { %>
                     <p><strong>Invoice ID:</strong> <%= appointment.paymentData.invoiceId %></p>
                   <% } %>
                 <% } %>
-                
+                <% if (appointment.paymentData && appointment.paymentData.paymentId) { %>
+                  <p><strong>Payment ID:</strong> <%= appointment.paymentData.paymentId %></p>
+                <% } %>
+              </div>
+            <% } else if (appointment.paidAmount) { %>
+              <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
+            <% } %>
+            <% if (appointment.status !== 'cancelled' && appointment.status !== 'completed') { %>
+              <form action="/appointments/<%= appointment.id %>/cancel" method="POST" style="margin-top:1rem;">
+                <button type="submit" class="btn btn-danger">Cancel Appointment</button>
+              </form>
+            <% } %>
+          </div>
+        <% }); %>
+      </div>
+    <% } else { %>
+      <p>You have no upcoming appointments scheduled.</p>
+      <a href="/book" class="btn btn-primary">Book Your First Appointment</a>
+    <% } %>
+
+    <% if (history.length > 0) { %>
+      <h4 style="margin-top:2rem;">Appointment History</h4>
+      <div class="appointments-list">
+        <% history.forEach(appointment => { %>
+          <div class="appointment-card">
+            <h3><%= appointment.serviceInfo ? appointment.serviceInfo.name : appointment.service %></h3>
+            <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
+            <p><strong>Time:</strong> <%= appointment.time %></p>
+            <p><strong>Status:</strong> <%= appointment.status %></p>
+            <% if (appointment.paymentType && appointment.paymentStatus) { %>
+              <div class="payment-info">
+                <h4>Payment Information</h4>
+                <p><strong>Payment Type:</strong> <%= appointment.paymentType.replace('_', ' ').toUpperCase() %></p>
+                <p><strong>Payment Status:</strong> <%= appointment.paymentStatus.replace('_', ' ').toUpperCase() %></p>
+                <% if (appointment.totalAmount) { %>
+                  <p><strong>Total Amount:</strong> $<%= (appointment.totalAmount / 100).toFixed(2) %></p>
+                <% } %>
+                <% if (appointment.paidAmount) { %>
+                  <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
+                <% } %>
+                <% if (appointment.remainingAmount && appointment.remainingAmount > 0) { %>
+                  <p><strong>Remaining Balance:</strong> $<%= (appointment.remainingAmount / 100).toFixed(2) %></p>
+                  <% if (appointment.paymentData && appointment.paymentData.invoiceId) { %>
+                    <p><strong>Invoice ID:</strong> <%= appointment.paymentData.invoiceId %></p>
+                  <% } %>
+                <% } %>
                 <% if (appointment.paymentData && appointment.paymentData.paymentId) { %>
                   <p><strong>Payment ID:</strong> <%= appointment.paymentData.paymentId %></p>
                 <% } %>
@@ -49,9 +95,6 @@
           </div>
         <% }); %>
       </div>
-    <% } else { %>
-      <p>You have no appointments scheduled.</p>
-  <a href="/book" class="btn btn-primary">Book Your First Appointment</a>
     <% } %>
     
   <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
