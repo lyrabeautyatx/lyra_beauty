@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Our Services - Lyra Beauty</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="services-page">
+    <!-- Header -->
+    <div class="container">
+      <h1>Our Beauty Services</h1>
+      <p class="services-intro">Discover our professional beauty treatments designed to enhance your natural beauty.</p>
+      
+      <!-- Navigation -->
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <% if (user) { %>
+          | <a href="/dashboard">Dashboard</a>
+          | <a href="/book">Book Appointment</a>
+          <% if (user.role === 'admin') { %>
+            | <a href="/admin">Admin Panel</a>
+          <% } %>
+          | <a href="/logout">Logout</a>
+        <% } else { %>
+          | <a href="/login">Login to Book</a>
+        <% } %>
+      </div>
+    </div>
+
+    <!-- Services Grid -->
+    <div class="services-container">
+      <% if (typeof error !== 'undefined' && error) { %>
+        <div class="container">
+          <p class="error"><%= error %></p>
+        </div>
+      <% } else if (services && services.length > 0) { %>
+        
+        <!-- Search and Filter -->
+        <div class="container">
+          <div class="search-filter-container">
+            <input type="text" id="serviceSearch" placeholder="Search services..." class="search-input">
+            <select id="priceFilter" class="filter-select">
+              <option value="">All Prices</option>
+              <option value="0-200">Under $200</option>
+              <option value="200-300">$200 - $300</option>
+              <option value="300-500">$300+</option>
+            </select>
+            <select id="durationFilter" class="filter-select">
+              <option value="">All Durations</option>
+              <option value="0-90">Under 90 min</option>
+              <option value="90-150">90-150 min</option>
+              <option value="150-300">150+ min</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="services-grid">
+          <% services.forEach(function(service) { %>
+            <div class="service-card" 
+                 data-price="<%= service.price %>" 
+                 data-duration="<%= service.duration_minutes %>"
+                 data-name="<%= service.name.toLowerCase() %>"
+                 data-description="<%= (service.description || '').toLowerCase().replace(/"/g, '&quot;').replace(/'/g, '&#39;') %>">
+              <div class="service-header">
+                <h3 class="service-name"><%= service.name %></h3>
+                <div class="service-price">$<%= service.price.toFixed(2) %></div>
+              </div>
+              
+              <div class="service-details">
+                <div class="service-duration">
+                  <span class="duration-icon">⏱️</span>
+                  <%= service.duration_minutes %> minutes
+                </div>
+                
+                <% if (service.description) { %>
+                  <p class="service-description"><%= service.description %></p>
+                <% } %>
+              </div>
+              
+              <div class="service-actions">
+                <% if (user) { %>
+                  <a href="/book?service=<%= service.service_key %>" class="btn btn-primary">Book Now</a>
+                <% } else { %>
+                  <a href="/login" class="btn btn-secondary">Login to Book</a>
+                <% } %>
+              </div>
+            </div>
+          <% }); %>
+        </div>
+        
+      <% } else { %>
+        <div class="container">
+          <p class="no-services">No services available at this time.</p>
+        </div>
+      <% } %>
+    </div>
+
+    <!-- Call to Action -->
+    <div class="container">
+      <div class="cta-section">
+        <h2>Ready to Book?</h2>
+        <p>Experience professional beauty services with Lyra Beauty</p>
+        <% if (user) { %>
+          <a href="/book" class="btn btn-primary btn-large">Book Your Appointment</a>
+        <% } else { %>
+          <a href="/login" class="btn btn-primary btn-large">Login to Get Started</a>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript for filtering and search -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const searchInput = document.getElementById('serviceSearch');
+      const priceFilter = document.getElementById('priceFilter');
+      const durationFilter = document.getElementById('durationFilter');
+      const serviceCards = document.querySelectorAll('.service-card');
+
+      function filterServices() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const priceRange = priceFilter.value;
+        const durationRange = durationFilter.value;
+
+        serviceCards.forEach(card => {
+          const name = card.dataset.name;
+          const description = card.dataset.description;
+          const price = parseFloat(card.dataset.price);
+          const duration = parseInt(card.dataset.duration);
+
+          // Search filter
+          const matchesSearch = !searchTerm || 
+            name.includes(searchTerm) || 
+            description.includes(searchTerm);
+
+          // Price filter
+          let matchesPrice = true;
+          if (priceRange) {
+            const [minPrice, maxPrice] = priceRange.split('-').map(Number);
+            if (maxPrice) {
+              matchesPrice = price >= minPrice && price <= maxPrice;
+            } else {
+              matchesPrice = price >= minPrice;
+            }
+          }
+
+          // Duration filter
+          let matchesDuration = true;
+          if (durationRange) {
+            const [minDuration, maxDuration] = durationRange.split('-').map(Number);
+            if (maxDuration) {
+              matchesDuration = duration >= minDuration && duration <= maxDuration;
+            } else {
+              matchesDuration = duration >= minDuration;
+            }
+          }
+
+          // Show/hide card
+          if (matchesSearch && matchesPrice && matchesDuration) {
+            card.style.display = 'block';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      }
+
+      // Add event listeners
+      searchInput.addEventListener('input', filterServices);
+      priceFilter.addEventListener('change', filterServices);
+      durationFilter.addEventListener('change', filterServices);
+    });
+  </script>
+</body>
+</html>
