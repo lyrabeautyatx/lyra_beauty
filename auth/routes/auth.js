@@ -1,3 +1,4 @@
+
 const express = require('express');
 const passport = require('../strategies/google');
 const { generateJWT, verifyJWT, handleTokenRefresh, requireAuth } = require('../middleware/auth');
@@ -6,6 +7,17 @@ const { generateJWT, verifyJWT, handleTokenRefresh, requireAuth } = require('../
 require('dotenv').config();
 
 const router = express.Router();
+
+// Explicit Google Signup Route (must be after router is initialized)
+router.get('/google-signup', (req, res, next) => {
+  if (!isOAuthConfigured) {
+    return res.status(503).json({ error: 'Google OAuth is not configured' });
+  }
+  req.session.oauthIntent = 'signup';
+  passport.authenticate('google', {
+    scope: ['profile', 'email']
+  })(req, res, next);
+});
 
 // Check if Google OAuth is configured
 const isOAuthConfigured = process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET;
@@ -20,32 +32,13 @@ router.get('/status', (req, res) => {
 });
 
 // Initiate Google OAuth
-router.get('/google', (req, res, next) => {
-  if (!isOAuthConfigured) {
-    return res.status(503).json({ error: 'Google OAuth is not configured' });
-  }
-  
-  // Check if we have the google strategy available
-  try {
-    passport.authenticate('google', {
-      scope: ['profile', 'email']
-    })(req, res, next);
-  } catch (error) {
-    console.error('Google OAuth strategy error:', error);
-    return res.status(503).json({ error: 'Google OAuth strategy not available' });
-  }
-});
-
-// Google OAuth callback
 router.get('/google/callback', (req, res, next) => {
   if (!isOAuthConfigured) {
     return res.redirect('/login?error=oauth_not_configured');
   }
-  
   passport.authenticate('google', { failureRedirect: '/login' })(req, res, () => {
     // Generate JWT token
     const token = generateJWT(req.user);
-    
     // Set JWT token as HTTP-only cookie for session persistence
     res.cookie('jwt_token', token, {
       httpOnly: true,
@@ -53,23 +46,18 @@ router.get('/google/callback', (req, res, next) => {
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });
-    
     // Store user in session for compatibility with existing code
     req.session.user = req.user;
-    
     console.log(`✓ JWT token set for user: ${req.user.email}`);
-    
-    // Redirect based on role
-    if (req.user.role === 'admin') {
-      res.redirect('/admin');
-    } else if (req.user.role === 'partner') {
-      // Future: redirect to partner dashboard
-      res.redirect('/dashboard');
-    } else {
-      res.redirect('/dashboard');
+    // Redirect based on role or intent
+    if (req.session.oauthIntent === 'signup') {
+      delete req.session.oauthIntent;
+      return res.redirect('/dashboard?welcome=new');
     }
+    return res.redirect('/dashboard');
   });
 });
+// (Removed duplicate and broken code)
 
 // Get current user profile - now requires authentication
 router.get('/profile', requireAuth, (req, res) => {

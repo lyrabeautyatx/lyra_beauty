@@ -1,27 +1,84 @@
-body.gold-bg {
-  background: linear-gradient(135deg, #fffbe6 0%, #ffd700 100%);
-  color: #333;
-  font-family: 'Segoe UI', Arial, sans-serif;
+/* Sollux Beauty Inspired Theme for Lyra Beauty */
+body {
+  background: #fffbe6;
+  color: #2d2d2d;
+  font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+  font-size: 16px;
 }
 
 .container {
   background: #fff;
-  border-radius: 10px;
-  justify-content: center;
-  padding: 12px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s;
-  text-decoration: none;
-  max-width: 400px;
-  margin: 0 auto;
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(191,161,74,0.08);
+  padding: 2.5rem 2rem;
+  max-width: 540px;
+  margin: 2.5rem auto;
 }
 
-.google-btn:hover {
-  background: #f8f9fa;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-  text-decoration: none;
-  color: #757575;
+.hero {
+  background: linear-gradient(135deg, #fffbe6 0%, #ffe9b3 100%);
+  border-radius: 18px;
+  padding: 2.5rem 2rem 1.5rem 2rem;
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+  font-weight: 700;
+  color: #bfa14a;
+  letter-spacing: 0.5px;
+}
+
+.btn, .btn-primary, .btn-secondary {
+  border-radius: 30px !important;
+  font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  padding: 0.7rem 2.2rem;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(191,161,74,0.08);
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.btn-primary {
+  background: #bfa14a !important;
+  color: #fff !important;
+  border: none;
+}
+.btn-primary:hover, .btn-primary:focus {
+  background: #a68c36 !important;
+  color: #fff !important;
+  box-shadow: 0 4px 16px rgba(191,161,74,0.18);
+}
+.btn-secondary {
+  background: #fff !important;
+  color: #bfa14a !important;
+  border: 2px solid #bfa14a !important;
+}
+.btn-secondary:hover, .btn-secondary:focus {
+  background: #f7f3e3 !important;
+  color: #bfa14a !important;
+  border-color: #a68c36 !important;
+}
+
+.service-card {
+  background: #fffbe6;
+  border: 1.5px solid #f3e6b3;
+  border-radius: 16px;
+  padding: 1.5rem 1.2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 2px 8px rgba(191,161,74,0.06);
+  text-align: center;
+}
+.service-card h4 {
+  color: #bfa14a;
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+.service-card p {
+  color: #2d2d2d;
+  font-size: 1rem;
+  margin-bottom: 1rem;
 }
 
 .divider {
@@ -29,13 +86,11 @@ body.gold-bg {
   align-items: center;
   margin: 2rem 0;
 }
-
 .divider hr {
   flex: 1;
   border: none;
   border-top: 1px solid #dadce0;
 }
-
 .divider span {
   padding: 0 1rem;
   color: #757575;
@@ -45,39 +100,13 @@ body.gold-bg {
 .legacy-login {
   margin-top: 1rem;
 }
-
 .legacy-note {
   font-size: 12px;
   color: #757575;
   margin-top: 1rem;
 }
 
-.oauth-note {
-  color: #757575;
-  margin-top: 0.5rem;
-}
-
-.dashboard-links {
-  margin: 2rem 0;
-}
-
-.form-group {
-  margin: 1rem 0;
-  text-align: left;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: bold;
-}
-
-.form-group input, .form-group select {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
+/* Additional custom styles for time slots, forms, etc. can follow here */
 
 .time-slots {
   display: grid;
