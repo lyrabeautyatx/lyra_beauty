@@ -25,6 +25,16 @@ const authRoutes = require('./auth/routes/auth');
 const { requireAuth, requireAdmin, requireCustomer, blockPartnerBooking, handleTokenRefresh } = require('./auth/middleware/auth');
 
 const app = express();
+// Trust proxy for correct protocol detection (needed for HTTPS redirects behind Nginx/Heroku/etc)
+app.enable('trust proxy');
+
+// Force HTTPS if not already using it (applies to all environments)
+app.use((req, res, next) => {
+  if (req.headers['x-forwarded-proto'] && req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect('https://' + req.headers.host + req.url);
+  }
+  next();
+});
 const PORT = process.env.PORT || 3000;
 
 // Initialize database
@@ -112,7 +122,7 @@ async function saveAppointment(appointmentData) {
     // Get user ID
     const user = await db.get('SELECT id FROM users WHERE username = ?', [username]);
     if (!user) {
-      throw new Error(`User not found: ${username}`);
+        console.error(`User not found: ${username}`);
     }
     
     // Get service ID
@@ -260,7 +270,7 @@ app.post('/signup', async (req, res) => {
     });
     res.cookie('jwt_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000
     });
@@ -294,7 +304,7 @@ app.post('/login', async (req, res) => {
     // Set JWT token as HTTP-only cookie
     res.cookie('jwt_token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: true,
       sameSite: 'strict',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     });

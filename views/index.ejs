@@ -3,34 +3,79 @@
 <head>
   <meta charset="UTF-8">
   <title>Lyra Beauty</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body class="gold-bg">
   <div class="container">
-    <h1>Welcome to Lyra Beauty</h1>
-    <p class="home-intro">Professional beauty services tailored to enhance your natural beauty.</p>
-    
-    <div class="home-actions">
-      <a href="/services" class="btn btn-primary">View Our Services</a>
+    <div class="d-flex justify-content-end align-items-center pt-3 pb-2">
       <% if (user) { %>
-        <a href="/book" class="btn btn-secondary">Book Appointment</a>
+        <a href="/dashboard" class="btn btn-outline-primary me-2">Dashboard</a>
+        <a href="/logout" class="btn btn-outline-secondary">Logout</a>
       <% } else { %>
-        <a href="/login" class="btn btn-secondary">Login to Book</a>
+        <a href="/login" class="btn btn-primary">Login</a>
       <% } %>
     </div>
-    
-    <div class="nav-links">
-      <% if (user) { %>
-        <p>Hello, <%= user.username %>!</p>
-        <a href="/dashboard">Dashboard</a>
-        <% if (user.role === 'admin') { %>
-          | <a href="/admin">Admin Panel</a>
-        <% } %>
-        | <a href="/logout">Logout</a>
-      <% } else { %>
-        <a href="/login">Login</a>
-      <% } %>
+    <div class="hero mb-4">
+      <h1 class="display-4">We Style While<br>You Smile</h1>
+      <p class="lead">Professional beauty services tailored to enhance your natural beauty.<br>Located in Austin, TX.</p>
+      <div class="d-flex flex-wrap justify-content-center gap-3 mt-4">
+        <a href="/book" class="btn btn-primary">Book Appointment</a>
+        <a href="/services" class="btn btn-secondary">View Our Services</a>
+      </div>
     </div>
+
+    <h2 class="text-center mb-4">Our Signature Services</h2>
+    <div class="row g-4 mb-5">
+      <div class="col-md-6">
+        <div class="service-card">
+          <h4>Microblading</h4>
+          <p>Perfectly sculpted, natural-looking brows.</p>
+          <a href="/services" class="btn btn-secondary">Learn More</a>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="service-card">
+          <h4>Microshading</h4>
+          <p>Soft, shaded brows for a fuller look.</p>
+          <a href="/services" class="btn btn-secondary">Learn More</a>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="service-card">
+          <h4>Lip Glow</h4>
+          <p>Enhance your lips with a soft, natural tint.</p>
+          <a href="/services" class="btn btn-secondary">Learn More</a>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="service-card">
+          <h4>Brow Mapping</h4>
+          <p>Flawlessly defined brows tailored to your face.</p>
+          <a href="/services" class="btn btn-secondary">Learn More</a>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="text-center mb-4">What Our Clients Say</h2>
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <div class="testimonial my-4 p-3" style="background:#fffbe6; border-radius:14px; border:1px solid #f3e6b3;">
+          <p class="mb-1" style="font-style:italic;">“The attention to detail and care was truly exceptional. I couldn’t be happier with the results!!”</p>
+          <div class="text-end"><strong>- Enra</strong></div>
+        </div>
+        <div class="testimonial my-4 p-3" style="background:#fffbe6; border-radius:14px; border:1px solid #f3e6b3;">
+          <p class="mb-1" style="font-style:italic;">“My brows look natural and perfectly shaped. Highly recommend Lyra Beauty to anyone considering permanent makeup.”</p>
+          <div class="text-end"><strong>- Amanda S.</strong></div>
+        </div>
+        <div class="testimonial my-4 p-3" style="background:#fffbe6; border-radius:14px; border:1px solid #f3e6b3;">
+          <p class="mb-1" style="font-style:italic;">“My lips now have the perfect tint—natural, soft, and exactly what I wanted. I get compliments all the time!”</p>
+          <div class="text-end"><strong>- Chloe D.</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Removed duplicate login/dashboard/logout buttons from bottom -->
   </div>
 </body>
 </html>
