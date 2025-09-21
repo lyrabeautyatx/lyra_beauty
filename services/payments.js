@@ -3,16 +3,14 @@ const { randomUUID } = require('crypto');
 const { getDatabase } = require('../database');
 
 // Initialize Square client
-const squareEnvironment = process.env.SQUARE_ENVIRONMENT === 'production' 
-  ? SquareEnvironment.Production 
-  : SquareEnvironment.Sandbox;
-
 const squareClient = new SquareClient({
   accessToken: process.env.SQUARE_ACCESS_TOKEN,
-  environment: squareEnvironment
+  environment: process.env.SQUARE_ENVIRONMENT === 'production'
+    ? SquareEnvironment.Production
+    : SquareEnvironment.Sandbox,
 });
-
-const { paymentsApi, invoicesApi } = squareClient;
+const paymentsApi = squareClient.paymentsApi;
+const invoicesApi = squareClient.invoicesApi;
 
 // Calculate down payment (20% of total)
 function calculateDownPayment(totalAmount) {

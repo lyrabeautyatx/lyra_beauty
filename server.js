@@ -25,6 +25,16 @@ const authRoutes = require('./auth/routes/auth');
 const { requireAuth, requireAdmin, requireCustomer, blockPartnerBooking, handleTokenRefresh } = require('./auth/middleware/auth');
 
 const app = express();
+// Trust proxy for correct protocol detection (needed for HTTPS redirects behind Nginx/Heroku/etc)
+app.enable('trust proxy');
+
+// Force HTTPS in production
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect('https://' + req.headers.host + req.url);
+  }
+  next();
+});
 const PORT = process.env.PORT || 3000;
 
 // Initialize database
