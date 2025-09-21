@@ -2,15 +2,32 @@ const { SquareClient, SquareEnvironment } = require('square');
 const { randomUUID } = require('crypto');
 const { getDatabase } = require('../database');
 
-// Initialize Square client
-const squareClient = new SquareClient({
-  accessToken: process.env.SQUARE_ACCESS_TOKEN,
-  environment: process.env.SQUARE_ENVIRONMENT === 'production'
-    ? SquareEnvironment.Production
-    : SquareEnvironment.Sandbox,
-});
-const paymentsApi = squareClient.paymentsApi;
-const invoicesApi = squareClient.invoicesApi;
+// Initialize Square client with defensive checks and thorough logging
+let squareClient, paymentsApi, invoicesApi;
+console.log('[Square] ENVIRONMENT:', process.env.SQUARE_ENVIRONMENT);
+console.log('[Square] ACCESS_TOKEN present:', !!process.env.SQUARE_ACCESS_TOKEN);
+console.log('[Square] LOCATION_ID:', process.env.SQUARE_LOCATION_ID);
+if (!process.env.SQUARE_ACCESS_TOKEN || !process.env.SQUARE_ENVIRONMENT || !process.env.SQUARE_LOCATION_ID) {
+  console.error('[Square] Missing required environment variables: SQUARE_ACCESS_TOKEN, SQUARE_ENVIRONMENT, or SQUARE_LOCATION_ID.');
+} else {
+  try {
+    squareClient = new SquareClient({
+      token: process.env.SQUARE_ACCESS_TOKEN,
+      environment: process.env.SQUARE_ENVIRONMENT === 'production'
+        ? SquareEnvironment.Production
+        : SquareEnvironment.Sandbox,
+    });
+    paymentsApi = squareClient.payments; // v43+ SDK uses .payments
+    invoicesApi = squareClient.invoices; // v43+ SDK uses .invoices
+    if (!paymentsApi) {
+      console.error('[Square] paymentsApi is undefined after client initialization.');
+    } else {
+      console.log('[Square] paymentsApi initialized successfully.');
+    }
+  } catch (err) {
+    console.error('[Square] Failed to initialize SquareClient:', err);
+  }
+}
 
 // Calculate down payment (20% of total)
 function calculateDownPayment(totalAmount) {
@@ -27,40 +44,40 @@ function calculateRemainingPayment(totalAmount) {
 async function processDownPayment(booking, sourceId, totalAmount) {
   const downPaymentAmount = calculateDownPayment(totalAmount);
   const remainingAmount = calculateRemainingPayment(totalAmount);
-
+  console.log('[Square] Starting down payment process:', {
+    booking,
+    sourceId,
+    totalAmount,
+    downPaymentAmount,
+    remainingAmount
+  });
+  const idempotencyKey = randomUUID();
+  const payment = {
+    sourceId,
+    idempotencyKey,
+    amountMoney: {
+      amount: BigInt(downPaymentAmount),
+      currency: 'USD'
+    },
+    locationId: process.env.SQUARE_LOCATION_ID,
+    note: `Down payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
+    referenceId: `down_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
+  };
+  console.log('[Square] Requesting createPayment:', payment);
+  if (!paymentsApi) {
+    console.error('[Square] paymentsApi is undefined at payment time!');
+    throw new Error('Square paymentsApi is not initialized');
+  }
   try {
-    const idempotencyKey = randomUUID();
-    
-    const payment = {
-      sourceId,
-      amountMoney: {
-        amount: downPaymentAmount,
-        currency: 'USD'
-      },
-      idempotencyKey,
-      locationId: process.env.SQUARE_LOCATION_ID,
-      note: `Down payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
-      referenceId: `down_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
-    };
-
-    console.log('Processing down payment:', {
-      amount: downPaymentAmount,
-      service: booking.serviceInfo.name,
-      date: booking.date,
-      time: booking.time
-    });
-
-    const response = await paymentsApi.createPayment(payment);
-    
-    if (response.result.payment) {
-      const paymentResult = response.result.payment;
-      
-      console.log('Down payment successful:', {
+    const response = await paymentsApi.create(payment);
+    console.log('[Square] createPayment response:', response);
+    if (response.payment) {
+      const paymentResult = response.payment;
+      console.log('[Square] Down payment successful:', {
         paymentId: paymentResult.id,
         status: paymentResult.status,
         amount: paymentResult.amountMoney.amount
       });
-
       return {
         success: true,
         paymentId: paymentResult.id,
@@ -69,25 +86,22 @@ async function processDownPayment(booking, sourceId, totalAmount) {
         status: paymentResult.status
       };
     } else {
-      console.error('Down payment failed: No payment object in response');
+      console.error('[Square] Down payment failed: No payment object in response', response);
       return {
         success: false,
         error: 'Payment processing failed'
       };
     }
   } catch (error) {
-    console.error('Down payment error:', error);
-    
-    // Extract useful error information
+    console.error('[Square] Down payment error:', error);
+    // SquareError handling
     let errorMessage = 'Payment processing failed';
     let errorCode = 'UNKNOWN_ERROR';
-    
-    if (error.result && error.result.errors) {
-      const squareError = error.result.errors[0];
-      errorMessage = squareError.detail || squareError.code || errorMessage;
-      errorCode = squareError.code || errorCode;
+    if (error.statusCode && error.body) {
+      errorMessage = error.body.message || errorMessage;
+      errorCode = error.statusCode;
+      console.error('[Square] Error details:', error.body);
     }
-    
     return {
       success: false,
       error: errorMessage,
@@ -98,39 +112,35 @@ async function processDownPayment(booking, sourceId, totalAmount) {
 
 // Process full payment (100% of service cost)
 async function processFullPayment(booking, sourceId, totalAmount) {
+  const idempotencyKey = randomUUID();
+  const payment = {
+    sourceId,
+    idempotencyKey,
+    amountMoney: {
+      amount: BigInt(totalAmount),
+      currency: 'USD'
+    },
+    locationId: process.env.SQUARE_LOCATION_ID,
+    note: `Full payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
+    referenceId: `full_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
+  };
+
+  console.log('Processing full payment:', {
+    amount: totalAmount,
+    service: booking.serviceInfo.name,
+    date: booking.date,
+    time: booking.time
+  });
+
   try {
-    const idempotencyKey = randomUUID();
-    
-    const payment = {
-      sourceId,
-      amountMoney: {
-        amount: totalAmount,
-        currency: 'USD'
-      },
-      idempotencyKey,
-      locationId: process.env.SQUARE_LOCATION_ID,
-      note: `Full payment for ${booking.serviceInfo.name} appointment on ${booking.date} at ${booking.time}`,
-      referenceId: `full_${booking.date}_${booking.time}`.replace(/[^a-zA-Z0-9]/g, '_')
-    };
-
-    console.log('Processing full payment:', {
-      amount: totalAmount,
-      service: booking.serviceInfo.name,
-      date: booking.date,
-      time: booking.time
-    });
-
-    const response = await paymentsApi.createPayment(payment);
-    
-    if (response.result.payment) {
-      const paymentResult = response.result.payment;
-      
+    const response = await paymentsApi.create(payment);
+    if (response.payment) {
+      const paymentResult = response.payment;
       console.log('Full payment successful:', {
         paymentId: paymentResult.id,
         status: paymentResult.status,
         amount: paymentResult.amountMoney.amount
       });
-
       return {
         success: true,
         paymentId: paymentResult.id,
@@ -138,7 +148,7 @@ async function processFullPayment(booking, sourceId, totalAmount) {
         status: paymentResult.status
       };
     } else {
-      console.error('Full payment failed: No payment object in response');
+      console.error('Full payment failed: No payment object in response', response);
       return {
         success: false,
         error: 'Payment processing failed'
@@ -146,17 +156,14 @@ async function processFullPayment(booking, sourceId, totalAmount) {
     }
   } catch (error) {
     console.error('Full payment error:', error);
-    
-    // Extract useful error information
+    // SquareError handling
     let errorMessage = 'Payment processing failed';
     let errorCode = 'UNKNOWN_ERROR';
-    
-    if (error.result && error.result.errors) {
-      const squareError = error.result.errors[0];
-      errorMessage = squareError.detail || squareError.code || errorMessage;
-      errorCode = squareError.code || errorCode;
+    if (error.statusCode && error.body) {
+      errorMessage = error.body.message || errorMessage;
+      errorCode = error.statusCode;
+      console.error('Full payment error details:', error.body);
     }
-    
     return {
       success: false,
       error: errorMessage,
