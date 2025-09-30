@@ -48,6 +48,7 @@ const fs = require('fs');
 const moment = require('moment');
 const passport = require('./auth/strategies/google');
 const { getDatabase } = require('./database');
+const emailService = require('./services/email');
 
 // Import webhook and payment services
 const webhookRoutes = require('./routes/webhooks');
@@ -572,6 +573,88 @@ app.get('/admin', requireAuth, requireAdmin, async (req, res) => {
     appointments,
     moment
   });
+});
+
+// API endpoint to get partner applications for admin
+app.get('/admin/partner-applications', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const applications = await db.all(`
+      SELECT id, email, first_name, last_name, username, role, partner_status, created_at 
+      FROM users 
+      WHERE partner_status IS NOT NULL 
+      ORDER BY 
+        CASE partner_status 
+          WHEN 'pending' THEN 1 
+          WHEN 'approved' THEN 2 
+          WHEN 'rejected' THEN 3 
+        END,
+        created_at DESC
+    `);
+    res.json(applications);
+  } catch (error) {
+    console.error('Error fetching partner applications:', error);
+    res.status(500).json({ error: 'Failed to fetch partner applications' });
+  }
+});
+
+// API endpoint to update partner status (approve/reject)
+app.put('/admin/partner-applications/:userId', requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { status } = req.body;
+  
+  // Validate status
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status. Must be "approved" or "rejected"' });
+  }
+  
+  try {
+    // Get user details for email notification
+    const user = await db.get('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Update partner status
+    await db.run(`
+      UPDATE users 
+      SET partner_status = ?, 
+          role = CASE 
+            WHEN ? = 'approved' THEN 'partner' 
+            ELSE role 
+          END,
+          updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ?
+    `, [status, status, userId]);
+    
+    // TODO: Send email notification (will be implemented in next step)
+    console.log(`Partner application ${status} for user ${user.email}`);
+    
+    // Send email notification
+    try {
+      if (status === 'approved') {
+        await emailService.sendPartnerApprovalEmail(user);
+      } else if (status === 'rejected') {
+        await emailService.sendPartnerRejectionEmail(user);
+      }
+    } catch (emailError) {
+      console.error('Email notification failed:', emailError);
+      // Don't fail the whole operation if email fails
+    }
+    
+    res.json({ 
+      success: true, 
+      message: `Partner application ${status} successfully`,
+      user: {
+        id: user.id,
+        name: `${user.first_name} ${user.last_name}`,
+        email: user.email,
+        status: status
+      }
+    });
+  } catch (error) {
+    console.error('Error updating partner status:', error);
+    res.status(500).json({ error: 'Failed to update partner status' });
+  }
 });
 
 app.get('/logout', (req, res) => {
