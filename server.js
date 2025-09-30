@@ -168,12 +168,16 @@ async function loadAppointments() {
 
 async function saveAppointment(appointmentData) {
   try {
-    const { username, date, time, service, serviceInfo, status, paymentId, paidAmount } = appointmentData;
+    const { 
+      username, date, time, service, serviceInfo, status, paymentId, paidAmount,
+      couponCode, finalPrice, downPaymentAmount 
+    } = appointmentData;
     
     // Get user ID
     const user = await db.get('SELECT id FROM users WHERE username = ?', [username]);
     if (!user) {
         console.error(`User not found: ${username}`);
+        throw new Error(`User not found: ${username}`);
     }
     
     // Get service ID
@@ -182,12 +186,62 @@ async function saveAppointment(appointmentData) {
       throw new Error(`Service not found: ${service}`);
     }
     
-    const result = await db.run(`
-      INSERT INTO appointments (user_id, service_id, date, time, status, payment_id, paid_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [user.id, serviceRecord.id, date, time, status, paymentId, paidAmount]);
+    // Handle coupon if provided
+    let couponId = null;
+    if (couponCode) {
+      const coupon = await db.get(
+        'SELECT * FROM coupons WHERE code = ? AND active = 1', 
+        [couponCode]
+      );
+      if (coupon) {
+        couponId = coupon.id;
+        console.log(`Applying coupon: ${couponCode} (ID: ${couponId})`);
+      } else {
+        console.warn(`Invalid or inactive coupon: ${couponCode}`);
+      }
+    }
     
-    return result.id;
+    const result = await db.run(`
+      INSERT INTO appointments (
+        user_id, service_id, coupon_id, date, time, status, 
+        payment_id, paid_amount, final_price, down_payment_amount
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      user.id, 
+      serviceRecord.id, 
+      couponId,
+      date, 
+      time, 
+      status, 
+      paymentId, 
+      paidAmount,
+      finalPrice || (serviceRecord.price * 100), // Convert to cents
+      downPaymentAmount
+    ]);
+    
+    const appointmentId = result.id;
+    console.log(`Appointment saved: ID ${appointmentId}`);
+    
+    // Process commission if coupon was used
+    if (couponId) {
+      try {
+        const { processAppointmentCommission } = require('./services/commission');
+        const originalPrice = serviceRecord.price * 100; // Convert to cents
+        
+        const commission = await processAppointmentCommission({
+          appointmentId,
+          couponId,
+          originalPrice
+        });
+        
+        console.log(`Commission processed: $${(commission.commissionAmount / 100).toFixed(2)} for appointment ${appointmentId}`);
+      } catch (commissionError) {
+        console.error('Error processing commission:', commissionError);
+        // Don't fail the appointment creation if commission processing fails
+      }
+    }
+    
+    return appointmentId;
   } catch (error) {
     console.error('Error saving appointment:', error);
     throw error;
@@ -248,6 +302,10 @@ app.use('/webhooks', webhookRoutes);
 // Service management routes
 const serviceRoutes = require('./routes/services');
 app.use('/api/services', serviceRoutes);
+
+// Commission management routes
+const commissionRoutes = require('./routes/commissions');
+app.use('/api/commissions', commissionRoutes);
 
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
