@@ -205,4 +205,189 @@ Service: $300 Microblading
 - Do NOT forget to flag customer accounts after coupon usage
 - Do NOT allow negative pricing or zero-cost services
 
+## How to Run & Test
+
+### Development Setup
+```bash
+# Install dependencies
+npm install
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your credentials (Google OAuth, Square, etc.)
+
+# Initialize database
+npm run migrate
+
+# Start development server
+npm start
+# Or with auto-reload:
+npm run dev
+```
+
+### Testing Commands
+```bash
+# Run all tests (currently placeholder - tests are run individually)
+npm test
+
+# Database tests
+node tests/database-test.js
+
+# Authentication tests
+node tests/auth-test.js
+node tests/oauth-integration-test.js
+node tests/jwt-test.js
+
+# Payment & Square integration tests
+node tests/square-connection-test.js
+node tests/square-integration-test.js
+node tests/payment-status-test.js
+node tests/webhook-test.js
+
+# User & role tests
+node tests/user-registration-test.js
+node tests/role-access-test-simple.js
+
+# Coupon system tests
+node tests/coupon-test.js
+node tests/integration-coupon-test.js
+
+# Comprehensive tests
+node tests/integration-test.js
+```
+
+### Database Commands
+```bash
+# Run database migration (sets up schema and migrates data)
+npm run migrate
+
+# View database schema
+npm run schema
+
+# Validate database integrity
+npm run validate
+```
+
+### Production Commands
+```bash
+# Start production server
+npm run start:production
+
+# Using PM2 (on server)
+pm2 start ecosystem.config.js
+pm2 logs lyra-beauty
+pm2 restart lyra-beauty
+```
+
+## Development Workflow
+
+### Local Development Setup
+1. Clone repository and install dependencies
+2. Configure `.env` file with all required credentials:
+   - Google OAuth credentials
+   - Square sandbox credentials
+   - JWT and session secrets
+   - Database path
+3. Run database migration: `npm run migrate`
+4. Start development server: `npm start` or `npm run dev`
+5. Access application at `http://localhost:3000`
+
+### Making Changes
+1. Create feature branch: `git checkout -b issue-XX-description`
+2. Make changes following code style conventions
+3. Test changes thoroughly with relevant test files
+4. Ensure database changes are properly migrated
+5. Commit with descriptive messages referencing issue number
+6. Push and create PR with Copilot as reviewer
+
+### Testing Your Changes
+- Always test authentication flows if touching auth code
+- Test payment flows in Square sandbox environment
+- Verify database changes with validation script
+- Test role-based access control for permission changes
+- Check webhook handling for payment-related changes
+
+## File Navigation Guide
+
+### Key Entry Points
+- `server.js` - Main application entry point
+- `server-production.js` - Production server with PM2 configuration
+- `database.js` - Database class and connection handling
+- `ecosystem.config.js` - PM2 process manager configuration
+
+### Directory Structure
+- `/auth/` - Authentication strategies (Google OAuth, JWT)
+- `/controllers/` - Business logic for routes (appointments, payments, users)
+- `/routes/` - Express route definitions
+- `/services/` - Reusable business services (coupon, commission, payment)
+- `/middleware/` - Authentication, authorization, validation middleware
+- `/views/` - EJS templates for frontend
+- `/public/` - Static assets (CSS, JS, images)
+- `/database/` - Database scripts (migration, schema, validation)
+- `/tests/` - Test files for all components
+- `/scripts/` - Utility scripts (environment verification, Square testing)
+
+### Important Files by Feature
+**Authentication:**
+- `auth/googleStrategy.js` - Google OAuth configuration
+- `auth/jwtStrategy.js` - JWT token handling
+- `controllers/authController.js` - Login/logout logic
+- `middleware/authMiddleware.js` - Route protection
+
+**Payments:**
+- `controllers/paymentController.js` - Payment processing
+- `controllers/webhookController.js` - Square webhook handling
+- `services/paymentService.js` - Payment business logic
+
+**Appointments:**
+- `controllers/appointmentController.js` - Booking logic
+- `routes/appointments.js` - Appointment routes
+
+**Partner System:**
+- `services/couponService.js` - Coupon validation and usage
+- `services/commissionService.js` - Commission calculations
+- `controllers/partnerController.js` - Partner dashboard
+
+**Database:**
+- `database.js` - Main database class
+- `database/migrate.js` - Migration script
+- `database/schema.sql` - Database schema definition
+
+## Common Tasks & Solutions
+
+### Adding a New Route
+1. Create route file in `/routes/` following existing patterns
+2. Create corresponding controller in `/controllers/`
+3. Add authentication middleware if needed
+4. Import and use route in `server.js`
+5. Add tests in `/tests/`
+
+### Database Changes
+1. Update schema in `database.js` `initializeTables()` method
+2. Add migration logic in `database/migrate.js` if needed
+3. Run `npm run migrate` to apply changes
+4. Run `npm run validate` to verify integrity
+5. Update any affected queries in controllers/services
+
+### Adding New Service Logic
+1. Create service file in `/services/`
+2. Follow existing service patterns (export functions or class)
+3. Use parameterized queries for database operations
+4. Add comprehensive error handling
+5. Create corresponding test file in `/tests/`
+
+### Payment Integration Changes
+1. Test in Square sandbox first (use sandbox credentials)
+2. Verify webhook signature validation
+3. Test idempotency with duplicate requests
+4. Handle all error scenarios gracefully
+5. Update webhook tests to cover new scenarios
+
+### Environment Variables
+Always add new environment variables to:
+1. `.env.example` (with placeholder values)
+2. Local `.env` file (with real values)
+3. GitHub Secrets (for CI/CD)
+4. Production server environment (via deployment script)
+
 When implementing features, always consider the business rules, user roles, and security requirements. Follow the phase-based approach and respect the dependencies between issues.
