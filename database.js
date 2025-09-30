@@ -157,15 +157,20 @@ class Database {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER,
           service_id INTEGER,
+          coupon_id INTEGER,
           date TEXT NOT NULL,
           time TEXT NOT NULL,
+          original_price INTEGER NOT NULL,
+          final_price INTEGER NOT NULL,
+          down_payment_amount INTEGER DEFAULT 0,
           status TEXT DEFAULT 'pending',
           payment_id TEXT,
           paid_amount INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (service_id) REFERENCES services (id)
+          FOREIGN KEY (service_id) REFERENCES services (id),
+          FOREIGN KEY (coupon_id) REFERENCES coupons (id)
         )
       `);
 
@@ -180,6 +185,50 @@ class Database {
           status TEXT DEFAULT 'pending',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (appointment_id) REFERENCES appointments (id)
+        )
+      `);
+
+      // Coupons table for partner referral system
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS coupons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          partner_id INTEGER NOT NULL,
+          code TEXT UNIQUE NOT NULL,
+          discount_percentage DECIMAL(5,2) DEFAULT 10.00,
+          active BOOLEAN DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (partner_id) REFERENCES users (id)
+        )
+      `);
+
+      // Coupon usage tracking (one per customer lifetime)
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS coupon_usage (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          coupon_id INTEGER NOT NULL,
+          customer_id INTEGER NOT NULL,
+          appointment_id INTEGER NOT NULL,
+          used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (coupon_id) REFERENCES coupons (id),
+          FOREIGN KEY (customer_id) REFERENCES users (id),
+          FOREIGN KEY (appointment_id) REFERENCES appointments (id),
+          UNIQUE(coupon_id, customer_id)
+        )
+      `);
+
+      // Partner commissions tracking
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS partner_commissions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          partner_id INTEGER NOT NULL,
+          appointment_id INTEGER NOT NULL,
+          commission_amount INTEGER NOT NULL,
+          status TEXT DEFAULT 'pending',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (partner_id) REFERENCES users (id),
           FOREIGN KEY (appointment_id) REFERENCES appointments (id)
         )
       `);

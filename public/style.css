@@ -1,4 +1,34 @@
-/* Sollux Beauty Inspired Theme for Lyra Beauty */
+/* Coupon and pricing styles */
+.pricing-breakdown {
+  background: #f8f9fa;
+  border-left: 4px solid #bfa14a;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.coupon-discount {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.final-price {
+  color: #bfa14a;
+  font-weight: 700;
+  font-size: 1.1em;
+  border-top: 1px solid #dee2e6;
+  padding-top: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.form-group {
+  margin-bottom: 1.5rem;
+}
+
+.form-text {
+  color: #6c757d;
+  font-size: 0.875rem;
+}
 body {
   background: #fffbe6;
   color: #2d2d2d;

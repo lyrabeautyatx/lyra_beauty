@@ -40,6 +40,32 @@ function calculateRemainingPayment(totalAmount) {
   return totalAmount - downPayment;
 }
 
+// Calculate pricing with optional coupon discount
+function calculatePricingWithDiscount(originalPrice, couponDiscount = null) {
+  let finalPrice = originalPrice;
+  let discountAmount = 0;
+  let partnerCommission = 0;
+  
+  if (couponDiscount) {
+    discountAmount = Math.floor(originalPrice * (couponDiscount.discountPercentage / 100));
+    finalPrice = originalPrice - discountAmount;
+    partnerCommission = Math.floor(originalPrice * 0.20); // 20% of original price
+  }
+  
+  const downPaymentAmount = calculateDownPayment(finalPrice);
+  const remainingAmount = calculateRemainingPayment(finalPrice);
+  
+  return {
+    originalPrice,
+    finalPrice,
+    discountAmount,
+    partnerCommission,
+    downPaymentAmount,
+    remainingAmount,
+    couponDiscount
+  };
+}
+
 // Process down payment (20% of service cost)
 async function processDownPayment(booking, sourceId, totalAmount) {
   const downPaymentAmount = calculateDownPayment(totalAmount);
@@ -377,6 +403,7 @@ module.exports = {
   createRemainingPaymentInvoice,
   calculateDownPayment,
   calculateRemainingPayment,
+  calculatePricingWithDiscount,
   getPaymentDetails,
   refundPayment
 };
