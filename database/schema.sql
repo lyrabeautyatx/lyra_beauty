@@ -53,3 +53,67 @@ CREATE TRIGGER IF NOT EXISTS update_services_timestamp
   BEGIN
     UPDATE services SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
   END;
+
+-- Coupons table for partner referral system
+CREATE TABLE IF NOT EXISTS coupons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  code VARCHAR(50) NOT NULL UNIQUE,
+  discount_percentage INTEGER NOT NULL CHECK (discount_percentage > 0 AND discount_percentage <= 100),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (partner_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+-- Coupon usage tracking table - ensures one coupon per customer lifetime
+CREATE TABLE IF NOT EXISTS coupon_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coupon_id INTEGER NOT NULL,
+  customer_id INTEGER NOT NULL,
+  appointment_id INTEGER,
+  used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (coupon_id) REFERENCES coupons (id) ON DELETE CASCADE,
+  FOREIGN KEY (customer_id) REFERENCES users (id) ON DELETE CASCADE,
+  FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE SET NULL,
+  UNIQUE(coupon_id, customer_id) -- Prevents same customer from using same coupon multiple times
+);
+
+-- Partner commissions table for tracking earnings
+CREATE TABLE IF NOT EXISTS partner_commissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  partner_id INTEGER NOT NULL,
+  appointment_id INTEGER NOT NULL,
+  original_price DECIMAL(10,2) NOT NULL,
+  commission_amount DECIMAL(10,2) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (partner_id) REFERENCES users (id) ON DELETE CASCADE,
+  FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE
+);
+
+-- Additional indexes for performance
+CREATE INDEX IF NOT EXISTS idx_coupons_partner_id ON coupons(partner_id);
+CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code);
+CREATE INDEX IF NOT EXISTS idx_coupons_active ON coupons(active);
+CREATE INDEX IF NOT EXISTS idx_coupon_usage_customer_id ON coupon_usage(customer_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usage_coupon_id ON coupon_usage(coupon_id);
+CREATE INDEX IF NOT EXISTS idx_partner_commissions_partner_id ON partner_commissions(partner_id);
+CREATE INDEX IF NOT EXISTS idx_partner_commissions_status ON partner_commissions(status);
+
+-- Trigger to update updated_at timestamp on coupons table
+CREATE TRIGGER IF NOT EXISTS update_coupons_timestamp 
+  AFTER UPDATE ON coupons
+  FOR EACH ROW
+  BEGIN
+    UPDATE coupons SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END;
+
+-- Trigger to update updated_at timestamp on partner_commissions table
+CREATE TRIGGER IF NOT EXISTS update_partner_commissions_timestamp 
+  AFTER UPDATE ON partner_commissions
+  FOR EACH ROW
+  BEGIN
+    UPDATE partner_commissions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END;

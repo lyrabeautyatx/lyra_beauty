@@ -58,6 +58,7 @@ const {
   calculateDownPayment, 
   calculateRemainingPayment 
 } = require('./services/payments');
+const { PaymentStatusService, PAYMENT_STATUSES, PAYMENT_TYPES } = require('./services/paymentStatus');
 
 // Import coupon service
 const couponService = require('./services/coupon');
@@ -256,6 +257,10 @@ app.use('/webhooks', webhookRoutes);
 // Service management routes
 const serviceRoutes = require('./routes/services');
 app.use('/api/services', serviceRoutes);
+
+// Coupon routes
+const couponRoutes = require('./routes/coupons');
+app.use('/api', couponRoutes);
 
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
@@ -524,6 +529,7 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
   
   const { sourceId, cardDetails, paymentType = 'down' } = req.body;
   const booking = req.session.pendingBooking;
+  const paymentStatusService = new PaymentStatusService();
   
   try {
     let paymentResult;
@@ -549,13 +555,16 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           pricing: booking.pricing
         });
         
-        // Store payment record
-        await db.run(
-          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [appointmentId, paymentResult.paymentId, paymentResult.amount, 'down_payment', paymentResult.status]
-        );
+        // Store payment record using status service (from Issue #50)
+        const paymentId = await paymentStatusService.createPaymentRecord({
+          squarePaymentId: paymentResult.paymentId,
+          appointmentId: appointmentId,
+          amount: paymentResult.amount,
+          type: PAYMENT_TYPES.DOWN_PAYMENT,
+          status: paymentResult.status === 'COMPLETED' ? PAYMENT_STATUSES.COMPLETED : PAYMENT_STATUSES.PROCESSING
+        });
         
-        // Handle coupon usage if coupon was applied
+        // Handle coupon usage if coupon was applied (critical business logic)
         if (booking.coupon && booking.pricing) {
           try {
             // Record coupon usage
@@ -583,7 +592,6 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
             // Don't fail the payment, just log the error
           }
         }
-        
         // Create invoice for remaining payment
         const invoiceResult = await createRemainingPaymentInvoice(
           booking, 
@@ -605,6 +613,19 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           discountAmount: booking.pricing ? booking.pricing.discountAmount : 0
         });
       } else {
+        // Record failed payment attempt
+        try {
+          await paymentStatusService.createPaymentRecord({
+            squarePaymentId: `failed_${Date.now()}`, // Temporary ID for failed payments
+            appointmentId: null,
+            amount: paymentResult.amount || calculateDownPayment(totalAmount),
+            type: PAYMENT_TYPES.DOWN_PAYMENT,
+            status: PAYMENT_STATUSES.FAILED
+          });
+        } catch (recordError) {
+          console.error('Failed to record failed payment:', recordError);
+        }
+        
         res.status(400).json({ 
           error: paymentResult.error || 'Down payment was not completed',
           code: paymentResult.code 
@@ -625,11 +646,14 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           paymentId: paymentResult.paymentId,
           paidAmount: totalAmount
         });
-        // Store payment record
-        await db.run(
-          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [appointmentId, paymentResult.paymentId, totalAmount, 'full_payment', paymentResult.status]
-        );
+        // Store payment record using status service
+        const paymentId = await paymentStatusService.createPaymentRecord({
+          squarePaymentId: paymentResult.paymentId,
+          appointmentId: appointmentId,
+          amount: totalAmount,
+          type: PAYMENT_TYPES.FULL_PAYMENT,
+          status: paymentResult.status === 'COMPLETED' ? PAYMENT_STATUSES.COMPLETED : PAYMENT_STATUSES.PROCESSING
+        });
         // Clear pending booking
         delete req.session.pendingBooking;
         res.json({ 
@@ -640,6 +664,19 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           remainingAmount: 0
         });
       } else {
+        // Record failed payment attempt
+        try {
+          await paymentStatusService.createPaymentRecord({
+            squarePaymentId: `failed_${Date.now()}`, // Temporary ID for failed payments
+            appointmentId: null,
+            amount: totalAmount,
+            type: PAYMENT_TYPES.FULL_PAYMENT,
+            status: PAYMENT_STATUSES.FAILED
+          });
+        } catch (recordError) {
+          console.error('Failed to record failed payment:', recordError);
+        }
+        
         res.status(400).json({ 
           error: paymentResult.error || 'Payment was not completed',
           code: paymentResult.code 
@@ -650,7 +687,24 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
     }
   } catch (error) {
     console.error('Payment error:', error);
-    res.status(500).json({ error: 'Payment processing failed' });
+    
+    // Try to record the error
+    try {
+      await paymentStatusService.createPaymentRecord({
+        squarePaymentId: `error_${Date.now()}`,
+        appointmentId: null,
+        amount: 0,
+        type: paymentType === 'down' ? PAYMENT_TYPES.DOWN_PAYMENT : PAYMENT_TYPES.FULL_PAYMENT,
+        status: PAYMENT_STATUSES.FAILED
+      });
+    } catch (recordError) {
+      console.error('Failed to record payment error:', recordError);
+    }
+    
+    res.status(500).json({ 
+      error: 'Payment processing failed',
+      message: error.message 
+    });
   }
 });
 
@@ -658,9 +712,26 @@ app.get('/my-appointments', requireAuth, async (req, res) => {
   const appointments = await loadAppointments();
   const userAppointments = appointments.filter(apt => apt.username === req.session.user.username);
   
+  // Enhanced appointment data with payment status
+  const paymentStatusService = new PaymentStatusService();
+  const enhancedAppointments = await Promise.all(
+    userAppointments.map(async (appointment) => {
+      try {
+        const paymentSummary = await paymentStatusService.getPaymentSummary(appointment.id);
+        return {
+          ...appointment,
+          paymentSummary
+        };
+      } catch (error) {
+        console.error(`Error getting payment summary for appointment ${appointment.id}:`, error);
+        return appointment;
+      }
+    })
+  );
+  
   res.render('my-appointments', { 
     user: req.session.user, 
-    appointments: userAppointments,
+    appointments: enhancedAppointments,
     moment
   });
 });

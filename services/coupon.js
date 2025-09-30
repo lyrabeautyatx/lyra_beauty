@@ -1,8 +1,59 @@
 const { getDatabase } = require('../database');
 
+// Animal names for coupon generation based on first letter of partner's first name
+const ANIMAL_MAPPING = {
+  'A': 'alpaca', 'B': 'bear', 'C': 'cat', 'D': 'dolphin', 'E': 'elephant',
+  'F': 'fox', 'G': 'giraffe', 'H': 'hippo', 'I': 'iguana', 'J': 'jaguar',
+  'K': 'koala', 'L': 'lion', 'M': 'monkey', 'N': 'narwhal', 'O': 'otter',
+  'P': 'penguin', 'Q': 'quail', 'R': 'rabbit', 'S': 'seal', 'T': 'tiger',
+  'U': 'unicorn', 'V': 'vulture', 'W': 'whale', 'X': 'xerus', 'Y': 'yak', 'Z': 'zebra'
+};
+
 class CouponService {
   constructor() {
     this.db = getDatabase();
+  }
+
+  /**
+   * Generate a coupon code based on partner's first name
+   * Format: [animal][discount] (e.g., "penguin10off")
+   */
+  generateCouponCode(firstName, discountPercentage = 10) {
+    if (!firstName || typeof firstName !== 'string') {
+      throw new Error('First name is required to generate coupon code');
+    }
+
+    const firstLetter = firstName.charAt(0).toUpperCase();
+    const animal = ANIMAL_MAPPING[firstLetter] || 'panda'; // fallback to panda
+    return `${animal}${discountPercentage}off`;
+  }
+
+  /**
+   * Validate coupon code format
+   */
+  validateCouponCodeFormat(code) {
+    if (!code || typeof code !== 'string') {
+      return { valid: false, error: 'Coupon code is required' };
+    }
+
+    // Check format: [animal][number]off
+    const codePattern = /^[a-z]+\d+off$/i;
+    if (!codePattern.test(code)) {
+      return { valid: false, error: 'Invalid coupon code format. Expected format: [animal][discount]off' };
+    }
+
+    // Extract discount percentage
+    const match = code.match(/(\d+)off$/i);
+    if (!match) {
+      return { valid: false, error: 'Could not extract discount from coupon code' };
+    }
+
+    const discount = parseInt(match[1]);
+    if (discount <= 0 || discount > 100) {
+      return { valid: false, error: 'Discount percentage must be between 1 and 100' };
+    }
+
+    return { valid: true, discount };
   }
 
   /**
@@ -45,36 +96,17 @@ class CouponService {
       if (customer.has_used_coupon) {
         return {
           valid: false,
-          error: 'You have already used a coupon. Each customer can only use one coupon in their lifetime.'
+          error: 'You have already used a coupon. Only one coupon per customer lifetime is allowed.'
         };
       }
 
-      // Step 3: Check if this specific coupon has been used by this customer
-      const existingUsage = await this.db.get(`
-        SELECT id 
-        FROM coupon_usage 
-        WHERE coupon_id = ? AND customer_id = ?
-      `, [coupon.id, customerId]);
-
-      if (existingUsage) {
-        return {
-          valid: false,
-          error: 'You have already used this coupon'
-        };
-      }
-
-      // Coupon is valid
+      // Step 3: Coupon is valid and customer can use it
       return {
         valid: true,
-        coupon: {
-          id: coupon.id,
-          code: coupon.code,
-          discount_percentage: coupon.discount_percentage,
-          partner_id: coupon.partner_id,
-          partner_name: `${coupon.first_name} ${coupon.last_name}`
-        }
+        coupon: coupon,
+        discount_percentage: coupon.discount_percentage,
+        partner_name: `${coupon.first_name} ${coupon.last_name}`
       };
-
     } catch (error) {
       console.error('Error validating coupon:', error);
       return {
@@ -85,139 +117,230 @@ class CouponService {
   }
 
   /**
-   * Calculate discount amount based on service price and coupon
-   * @param {number} servicePrice - Original service price in cents
-   * @param {number} discountPercentage - Discount percentage (e.g., 10.00 for 10%)
-   * @returns {Object} Calculation result with amounts
+   * Create a coupon for a partner
    */
-  calculateDiscount(servicePrice, discountPercentage) {
-    const discountAmount = Math.floor(servicePrice * (discountPercentage / 100));
-    const finalPrice = servicePrice - discountAmount;
-    
-    return {
-      originalPrice: servicePrice,
-      discountAmount: discountAmount,
-      finalPrice: finalPrice,
-      discountPercentage: discountPercentage
-    };
-  }
-
-  /**
-   * Calculate partner commission (20% of original price, not discounted price)
-   * @param {number} originalPrice - Original service price in cents
-   * @param {number} commissionPercentage - Commission percentage (default 20%)
-   * @returns {number} Commission amount in cents
-   */
-  calculateCommission(originalPrice, commissionPercentage = 20.00) {
-    return Math.floor(originalPrice * (commissionPercentage / 100));
-  }
-
-  /**
-   * Record coupon usage after successful payment
-   * @param {number} couponId - The coupon ID
-   * @param {number} customerId - The customer's user ID
-   * @param {number} appointmentId - The appointment ID
-   * @param {number} discountAmount - The discount amount in cents
-   * @returns {boolean} Success status
-   */
-  async recordCouponUsage(couponId, customerId, appointmentId, discountAmount) {
+  async createCoupon(partnerId, discountPercentage = 10) {
     try {
+      await this.db.connect();
+
+      // Verify partner exists and has partner role
+      const partner = await this.db.get(
+        'SELECT id, first_name, role FROM users WHERE id = ? AND role = ?',
+        [partnerId, 'partner']
+      );
+
+      if (!partner) {
+        throw new Error('Partner not found or user is not a partner');
+      }
+
+      // Generate coupon code
+      const couponCode = this.generateCouponCode(partner.first_name, discountPercentage);
+
+      // Check if coupon already exists
+      const existingCoupon = await this.db.get(
+        'SELECT id FROM coupons WHERE code = ?',
+        [couponCode]
+      );
+
+      if (existingCoupon) {
+        throw new Error('Coupon code already exists');
+      }
+
+      // Create the coupon
+      const result = await this.db.run(
+        'INSERT INTO coupons (partner_id, code, discount_percentage) VALUES (?, ?, ?)',
+        [partnerId, couponCode, discountPercentage]
+      );
+
+      // Return the created coupon
+      const createdCoupon = await this.db.get(
+        'SELECT * FROM coupons WHERE id = ?',
+        [result.lastID]
+      );
+
+      return {
+        success: true,
+        coupon: createdCoupon
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get all coupons for a partner
+   */
+  async getPartnerCoupons(partnerId) {
+    try {
+      await this.db.connect();
+
+      const coupons = await this.db.all(
+        'SELECT * FROM coupons WHERE partner_id = ? ORDER BY created_at DESC',
+        [partnerId]
+      );
+
+      return {
+        success: true,
+        coupons
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        coupons: []
+      };
+    }
+  }
+
+  /**
+   * Get coupon by code
+   */
+  async getCouponByCode(code) {
+    try {
+      await this.db.connect();
+
+      const coupon = await this.db.get(
+        `SELECT c.*, u.first_name, u.last_name 
+         FROM coupons c 
+         JOIN users u ON c.partner_id = u.id 
+         WHERE c.code = ? AND c.active = 1`,
+        [code]
+      );
+
+      return {
+        success: true,
+        coupon
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        coupon: null
+      };
+    }
+  }
+
+  /**
+   * Check if customer can use a coupon (business rule: one coupon per customer lifetime)
+   */
+  async canCustomerUseCoupon(customerId, couponCode) {
+    try {
+      await this.db.connect();
+
+      // Check if customer has already used any coupon
+      const customer = await this.db.get(
+        'SELECT has_used_coupon FROM users WHERE id = ?',
+        [customerId]
+      );
+
+      if (!customer) {
+        return {
+          canUse: false,
+          reason: 'Customer not found'
+        };
+      }
+
+      if (customer.has_used_coupon) {
+        return {
+          canUse: false,
+          reason: 'Customer has already used a coupon. Only one coupon per customer lifetime is allowed.'
+        };
+      }
+
+      // Check if the specific coupon exists and is active
+      const couponResult = await this.getCouponByCode(couponCode);
+      if (!couponResult.success || !couponResult.coupon) {
+        return {
+          canUse: false,
+          reason: 'Coupon not found or inactive'
+        };
+      }
+
+      return {
+        canUse: true,
+        coupon: couponResult.coupon
+      };
+    } catch (error) {
+      return {
+        canUse: false,
+        reason: error.message
+      };
+    }
+  }
+
+  /**
+   * Record coupon usage
+   */
+  async recordCouponUsage(couponId, customerId, appointmentId = null) {
+    try {
+      await this.db.connect();
+
       // Start transaction
       await this.db.run('BEGIN TRANSACTION');
 
-      // Record the coupon usage
-      await this.db.run(`
-        INSERT INTO coupon_usage (coupon_id, customer_id, appointment_id, discount_amount) 
-        VALUES (?, ?, ?, ?)
-      `, [couponId, customerId, appointmentId, discountAmount]);
+      try {
+        // Insert coupon usage record
+        await this.db.run(
+          'INSERT INTO coupon_usage (coupon_id, customer_id, appointment_id) VALUES (?, ?, ?)',
+          [couponId, customerId, appointmentId]
+        );
 
-      // Mark customer as having used a coupon
-      await this.db.run(`
-        UPDATE users 
-        SET has_used_coupon = 1 
-        WHERE id = ?
-      `, [customerId]);
+        // Mark customer as having used a coupon
+        await this.db.run(
+          'UPDATE users SET has_used_coupon = 1 WHERE id = ?',
+          [customerId]
+        );
 
-      // Commit transaction
-      await this.db.run('COMMIT');
+        await this.db.run('COMMIT');
 
-      return true;
+        return { success: true };
+      } catch (error) {
+        await this.db.run('ROLLBACK');
+        throw error;
+      }
     } catch (error) {
-      // Rollback on error
-      await this.db.run('ROLLBACK');
-      console.error('Error recording coupon usage:', error);
-      return false;
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
   /**
-   * Record partner commission for a coupon usage
-   * @param {number} partnerId - The partner's user ID
-   * @param {number} appointmentId - The appointment ID
-   * @param {number} couponId - The coupon ID
-   * @param {number} originalServicePrice - The original service price in cents
-   * @param {number} commissionPercentage - The commission percentage (default 20%)
-   * @returns {boolean} Success status
+   * Get coupon usage statistics for a partner
    */
-  async recordPartnerCommission(partnerId, appointmentId, couponId, originalServicePrice, commissionPercentage = 20.00) {
+  async getCouponUsageStats(partnerId) {
     try {
-      const commissionAmount = this.calculateCommission(originalServicePrice, commissionPercentage);
+      await this.db.connect();
 
-      await this.db.run(`
-        INSERT INTO partner_commissions 
-        (partner_id, appointment_id, coupon_id, original_service_price, commission_amount, commission_percentage, status) 
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
-      `, [partnerId, appointmentId, couponId, originalServicePrice, commissionAmount, commissionPercentage]);
+      const stats = await this.db.get(
+        `SELECT 
+           COUNT(cu.id) as total_uses,
+           COUNT(DISTINCT cu.customer_id) as unique_customers,
+           SUM(CASE WHEN cu.appointment_id IS NOT NULL THEN 1 ELSE 0 END) as completed_appointments
+         FROM coupons c
+         LEFT JOIN coupon_usage cu ON c.id = cu.coupon_id
+         WHERE c.partner_id = ?`,
+        [partnerId]
+      );
 
-      return true;
+      return {
+        success: true,
+        stats: {
+          total_uses: stats.total_uses || 0,
+          unique_customers: stats.unique_customers || 0,
+          completed_appointments: stats.completed_appointments || 0
+        }
+      };
     } catch (error) {
-      console.error('Error recording partner commission:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Get coupon usage history for a customer
-   * @param {number} customerId - The customer's user ID
-   * @returns {Array} List of coupon usage records
-   */
-  async getCustomerCouponHistory(customerId) {
-    try {
-      return await this.db.all(`
-        SELECT cu.*, c.code, c.discount_percentage, a.date, a.time, s.name as service_name
-        FROM coupon_usage cu
-        JOIN coupons c ON cu.coupon_id = c.id
-        JOIN appointments a ON cu.appointment_id = a.id
-        JOIN services s ON a.service_id = s.id
-        WHERE cu.customer_id = ?
-        ORDER BY cu.used_at DESC
-      `, [customerId]);
-    } catch (error) {
-      console.error('Error getting customer coupon history:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Get partner commission history
-   * @param {number} partnerId - The partner's user ID
-   * @returns {Array} List of commission records
-   */
-  async getPartnerCommissions(partnerId) {
-    try {
-      return await this.db.all(`
-        SELECT pc.*, c.code, a.date, a.time, s.name as service_name, u.first_name, u.last_name
-        FROM partner_commissions pc
-        JOIN coupons c ON pc.coupon_id = c.id
-        JOIN appointments a ON pc.appointment_id = a.id
-        JOIN services s ON a.service_id = s.id
-        JOIN users u ON a.user_id = u.id
-        WHERE pc.partner_id = ?
-        ORDER BY pc.created_at DESC
-      `, [partnerId]);
-    } catch (error) {
-      console.error('Error getting partner commissions:', error);
-      return [];
+      return {
+        success: false,
+        error: error.message,
+        stats: null
+      };
     }
   }
 }
