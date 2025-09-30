@@ -99,6 +99,24 @@ class Database {
     });
   }
 
+  exec(sql) {
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not connected'));
+        return;
+      }
+      
+      this.db.exec(sql, (err) => {
+        if (err) {
+          console.error('Database exec error:', err);
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
   async close() {
     if (this.db) {
       return new Promise((resolve, reject) => {

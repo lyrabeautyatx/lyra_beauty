@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apply for Partnership - Lyra Beauty</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="gold-bg">
+  <div class="container mt-4">
+    <div class="row justify-content-center">
+      <div class="col-md-8">
+        <div class="card shadow">
+          <div class="card-header text-center bg-gold">
+            <h2 class="mb-0">Partner Application</h2>
+            <p class="mb-0 text-muted">Join the Lyra Beauty Partner Program</p>
+          </div>
+          <div class="card-body p-4">
+            
+            <% if (error) { %>
+              <div class="alert alert-danger" role="alert">
+                <%= error %>
+              </div>
+            <% } %>
+
+            <% if (success) { %>
+              <div class="alert alert-success" role="alert">
+                <strong>Application Submitted!</strong> Your partner application has been submitted successfully. 
+                You will receive an email notification when it's reviewed by our admin team.
+              </div>
+              <div class="text-center mt-3">
+                <a href="/dashboard" class="btn btn-primary">Return to Dashboard</a>
+              </div>
+            <% } else { %>
+
+            <div class="mb-4">
+              <h4>About Our Partner Program</h4>
+              <p class="text-muted">
+                As a Lyra Beauty partner, you'll earn <strong>20% commission</strong> on every successful referral.
+                Your referred customers get <strong>10% off</strong> their services. It's a win-win!
+              </p>
+              <div class="row">
+                <div class="col-md-6">
+                  <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-check text-success me-2"></i>
+                    <span>Earn 20% commission on referrals</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-check text-success me-2"></i>
+                    <span>Access to partner dashboard</span>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-check text-success me-2"></i>
+                    <span>Custom coupon codes</span>
+                  </div>
+                  <div class="d-flex align-items-center mb-2">
+                    <i class="fas fa-check text-success me-2"></i>
+                    <span>Real-time commission tracking</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <form method="POST" action="/apply-partner">
+              <div class="mb-3">
+                <label for="businessName" class="form-label">Business Name <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="businessName" name="businessName" 
+                       placeholder="Your business or professional name" required maxlength="255">
+                <div class="form-text">This will be associated with your referral coupons.</div>
+              </div>
+
+              <div class="mb-3">
+                <label for="businessDescription" class="form-label">Business Description</label>
+                <textarea class="form-control" id="businessDescription" name="businessDescription" rows="3"
+                          placeholder="Tell us about your business or professional background"></textarea>
+                <div class="form-text">Optional: Describe your business, industry, or professional background.</div>
+              </div>
+
+              <div class="mb-3">
+                <label for="referralExperience" class="form-label">Referral Experience</label>
+                <textarea class="form-control" id="referralExperience" name="referralExperience" rows="3"
+                          placeholder="Describe your experience with referral programs or marketing"></textarea>
+                <div class="form-text">Optional: Any previous experience with referral marketing, social media, or customer acquisition.</div>
+              </div>
+
+              <div class="mb-4">
+                <label for="whyPartner" class="form-label">Why do you want to become a partner? <span class="text-danger">*</span></label>
+                <textarea class="form-control" id="whyPartner" name="whyPartner" rows="4" required
+                          placeholder="Tell us why you're interested in partnering with Lyra Beauty"></textarea>
+                <div class="form-text">Help us understand your motivation and how you plan to promote our services.</div>
+              </div>
+
+              <div class="mb-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="agreeTerms" name="agreeTerms" required>
+                  <label class="form-check-label" for="agreeTerms">
+                    I agree to the <a href="/terms" target="_blank">Terms and Conditions</a> and 
+                    <a href="/privacy" target="_blank">Privacy Policy</a> <span class="text-danger">*</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary btn-lg">Submit Application</button>
+                <a href="/dashboard" class="btn btn-outline-secondary">Cancel</a>
+              </div>
+            </form>
+
+            <% } %>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</body>
+</html>

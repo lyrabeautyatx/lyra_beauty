@@ -589,6 +589,20 @@ app.get('/logout', (req, res) => {
   });
 });
 
+// Partner application routes
+const partnerApplicationController = require('./controllers/partnerApplicationController');
+
+// Partner application form (customers only)
+app.get('/apply-partner', requireAuth, requireCustomer, partnerApplicationController.showPartnerApplicationForm);
+app.post('/apply-partner', requireAuth, requireCustomer, partnerApplicationController.submitPartnerApplication);
+
+// Application status (for users to check their applications)
+app.get('/application-status', requireAuth, partnerApplicationController.showApplicationStatus);
+
+// Admin partner application management
+app.get('/admin/applications', requireAuth, requireAdmin, partnerApplicationController.showAdminApplications);
+app.post('/admin/applications/:applicationId/review', requireAuth, requireAdmin, partnerApplicationController.reviewApplication);
+
 setupCancelAppointmentRoute(app, db, requireAuth);
 app.listen(PORT, async () => {
   // Initialize database before starting server

@@ -14,6 +14,7 @@
     <div class="admin-nav">
       <button class="nav-tab active" onclick="showTab('appointments')">Appointments</button>
       <button class="nav-tab" onclick="showTab('services')">Service Management</button>
+      <button class="nav-tab" onclick="showTab('applications')">Partner Applications</button>
     </div>
     
     <!-- Appointments Tab -->
@@ -146,6 +147,14 @@
           </form>
         </div>
       </div>
+    </div>
+    
+    <!-- Partner Applications Tab -->
+    <div id="applications-tab" class="tab-content" style="display: none;">
+      <h3>Partner Applications</h3>
+      <p>Manage partner applications from this dedicated interface:</p>
+      <a href="/admin/applications" class="btn btn-primary">View All Applications</a>
+      <a href="/admin/applications?status=pending" class="btn btn-warning">Pending Applications</a>
     </div>
     
     <a href="/dashboard">User Dashboard</a> | <a href="/logout">Logout</a>
