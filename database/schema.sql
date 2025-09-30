@@ -53,3 +53,34 @@ CREATE TRIGGER IF NOT EXISTS update_services_timestamp
   BEGIN
     UPDATE services SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
   END;
+
+-- Partner applications table for tracking application requests
+CREATE TABLE IF NOT EXISTS partner_applications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  business_name VARCHAR(255) NOT NULL,
+  business_description TEXT,
+  referral_experience TEXT,
+  why_partner TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  admin_notes TEXT,
+  reviewed_by INTEGER, -- Admin user ID who reviewed
+  reviewed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users (id),
+  FOREIGN KEY (reviewed_by) REFERENCES users (id)
+);
+
+-- Indexes for partner applications
+CREATE INDEX IF NOT EXISTS idx_partner_applications_user_id ON partner_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_partner_applications_status ON partner_applications(status);
+CREATE INDEX IF NOT EXISTS idx_partner_applications_created_at ON partner_applications(created_at);
+
+-- Trigger to update updated_at timestamp on partner applications table
+CREATE TRIGGER IF NOT EXISTS update_partner_applications_timestamp 
+  AFTER UPDATE ON partner_applications
+  FOR EACH ROW
+  BEGIN
+    UPDATE partner_applications SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+  END;
