@@ -4,6 +4,77 @@
   <meta charset="UTF-8">
   <title>Admin Panel - Lyra Beauty</title>
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .payment-status-info {
+      background-color: #f8f9fa;
+      border: 1px solid #e9ecef;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+    }
+    
+    .payment-summary p {
+      margin: 8px 0;
+    }
+    
+    .payment-completed {
+      color: #28a745;
+    }
+    
+    .payment-pending {
+      color: #fd7e14;
+    }
+    
+    .payment-failed {
+      color: #dc3545;
+    }
+    
+    .payment-details {
+      margin-top: 10px;
+    }
+    
+    .payment-details summary {
+      cursor: pointer;
+      font-weight: bold;
+      padding: 5px 0;
+    }
+    
+    .payment-transaction {
+      background-color: #ffffff;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 10px;
+      margin: 8px 0;
+    }
+    
+    .payment-transaction p {
+      margin: 4px 0;
+    }
+    
+    .status-completed {
+      color: #28a745;
+      font-weight: bold;
+    }
+    
+    .status-pending, .status-processing {
+      color: #fd7e14;
+      font-weight: bold;
+    }
+    
+    .status-failed {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    
+    .error-message {
+      color: #dc3545;
+      font-style: italic;
+    }
+    
+    .appointment-card {
+      margin-bottom: 20px;
+    }
+  </style>
 </head>
 <body class="gold-bg">
   <div class="container">
@@ -37,9 +108,70 @@
             <p><strong>Date:</strong> <%= moment(appointment.date).format('MMMM Do, YYYY') %></p>
             <p><strong>Time:</strong> <%= appointment.time %></p>
             <p><strong>Status:</strong> <%= appointment.status %></p>
-            <% if (appointment.paidAmount) { %>
-              <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
-              <p><strong>Payment ID:</strong> <%= appointment.paymentId %></p>
+            
+            <!-- Enhanced Payment Status Information for Admin -->
+            <% if (appointment.paymentSummary) { %>
+              <div class="payment-status-info">
+                <h4>Payment Status</h4>
+                <div class="payment-summary">
+                  <% if (appointment.paymentSummary.totalPaid > 0) { %>
+                    <p class="payment-completed">
+                      <strong>✓ Paid:</strong> $<%= (appointment.paymentSummary.totalPaid / 100).toFixed(2) %>
+                    </p>
+                  <% } %>
+                  
+                  <% if (appointment.paymentSummary.totalPending > 0) { %>
+                    <p class="payment-pending">
+                      <strong>⏳ Pending:</strong> $<%= (appointment.paymentSummary.totalPending / 100).toFixed(2) %>
+                    </p>
+                  <% } %>
+                  
+                  <% if (appointment.paymentSummary.totalFailed > 0) { %>
+                    <p class="payment-failed">
+                      <strong>❌ Failed:</strong> $<%= (appointment.paymentSummary.totalFailed / 100).toFixed(2) %>
+                    </p>
+                  <% } %>
+                  
+                  <!-- Payment Details for Admin -->
+                  <% if (appointment.paymentSummary.paymentDetails && appointment.paymentSummary.paymentDetails.length > 0) { %>
+                    <details class="payment-details">
+                      <summary>Payment Transaction Details</summary>
+                      <div class="payment-transactions">
+                        <% appointment.paymentSummary.paymentDetails.forEach(payment => { %>
+                          <div class="payment-transaction">
+                            <p><strong>Type:</strong> <%= payment.type.replace('_', ' ').toUpperCase() %></p>
+                            <p><strong>Amount:</strong> $<%= (payment.amount / 100).toFixed(2) %></p>
+                            <p><strong>Status:</strong> 
+                              <span class="status-<%= payment.status %>"><%= payment.status.toUpperCase() %></span>
+                            </p>
+                            <% if (payment.square_payment_id) { %>
+                              <p><strong>Square Payment ID:</strong> <%= payment.square_payment_id %></p>
+                            <% } %>
+                            <% if (payment.error_message) { %>
+                              <p class="error-message"><strong>Error:</strong> <%= payment.error_message %></p>
+                            <% } %>
+                            <% if (payment.retry_count && payment.retry_count > 0) { %>
+                              <p><strong>Retry Count:</strong> <%= payment.retry_count %></p>
+                            <% } %>
+                            <p><small>Created: <%= moment(payment.created_at).format('MMM Do, YYYY HH:mm') %></small></p>
+                            <% if (payment.updated_at && payment.updated_at !== payment.created_at) { %>
+                              <p><small>Updated: <%= moment(payment.updated_at).format('MMM Do, YYYY HH:mm') %></small></p>
+                            <% } %>
+                          </div>
+                        <% }); %>
+                      </div>
+                    </details>
+                  <% } %>
+                </div>
+              </div>
+            <% } else if (appointment.paidAmount) { %>
+              <!-- Legacy Payment Info (fallback) -->
+              <div class="payment-info">
+                <p><strong>Amount Paid:</strong> $<%= (appointment.paidAmount / 100).toFixed(2) %></p>
+                <% if (appointment.paymentId) { %>
+                  <p><strong>Payment ID:</strong> <%= appointment.paymentId %></p>
+                <% } %>
+              </div>
             <% } %>
           </div>
         <% }); %>

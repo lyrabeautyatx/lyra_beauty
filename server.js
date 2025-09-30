@@ -738,9 +738,27 @@ app.get('/my-appointments', requireAuth, async (req, res) => {
 
 app.get('/admin', requireAuth, requireAdmin, async (req, res) => {
   const appointments = await loadAppointments();
+  
+  // Enhanced appointment data with payment status for admin view
+  const paymentStatusService = new PaymentStatusService();
+  const enhancedAppointments = await Promise.all(
+    appointments.map(async (appointment) => {
+      try {
+        const paymentSummary = await paymentStatusService.getPaymentSummary(appointment.id);
+        return {
+          ...appointment,
+          paymentSummary
+        };
+      } catch (error) {
+        console.error(`Error getting payment summary for appointment ${appointment.id}:`, error);
+        return appointment;
+      }
+    })
+  );
+  
   res.render('admin', { 
     user: req.session.user, 
-    appointments,
+    appointments: enhancedAppointments,
     moment
   });
 });
