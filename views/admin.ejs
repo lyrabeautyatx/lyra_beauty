@@ -14,6 +14,7 @@
     <div class="admin-nav">
       <button class="nav-tab active" onclick="showTab('appointments')">Appointments</button>
       <button class="nav-tab" onclick="showTab('services')">Service Management</button>
+      <button class="nav-tab" onclick="showTab('partners')">Partner Applications</button>
     </div>
     
     <!-- Appointments Tab -->
@@ -148,6 +149,15 @@
       </div>
     </div>
     
+    <!-- Partner Applications Tab -->
+    <div id="partners-tab" class="tab-content" style="display: none;">
+      <h3>Partner Applications</h3>
+      
+      <div id="partner-applications-list" class="applications-list">
+        <p>Loading partner applications...</p>
+      </div>
+    </div>
+    
     <a href="/dashboard">User Dashboard</a> | <a href="/logout">Logout</a>
   </div>
 
@@ -177,6 +187,86 @@
       // Load services if services tab is selected
       if (tabName === 'services') {
         loadServices();
+      }
+      
+      // Load partner applications if partners tab is selected
+      if (tabName === 'partners') {
+        loadPartnerApplications();
+      }
+    }
+    
+    // Function to load partner applications
+    async function loadPartnerApplications() {
+      try {
+        const response = await fetch('/admin/partner-applications');
+        const applications = await response.json();
+        
+        const container = document.getElementById('partner-applications-list');
+        
+        if (applications.length === 0) {
+          container.innerHTML = '<p>No pending partner applications.</p>';
+          return;
+        }
+        
+        let html = '';
+        applications.forEach(app => {
+          html += `
+            <div class="application-card">
+              <h4>${app.first_name} ${app.last_name}</h4>
+              <p><strong>Email:</strong> ${app.email}</p>
+              <p><strong>Username:</strong> ${app.username}</p>
+              <p><strong>Applied:</strong> ${new Date(app.created_at).toLocaleDateString()}</p>
+              <p><strong>Status:</strong> <span class="status-${app.partner_status}">${app.partner_status}</span></p>
+              
+              ${app.partner_status === 'pending' ? `
+                <div class="action-buttons">
+                  <button class="btn btn-success" onclick="updatePartnerStatus(${app.id}, 'approved')">
+                    Approve
+                  </button>
+                  <button class="btn btn-danger" onclick="updatePartnerStatus(${app.id}, 'rejected')">
+                    Reject
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        });
+        
+        container.innerHTML = html;
+      } catch (error) {
+        console.error('Error loading partner applications:', error);
+        document.getElementById('partner-applications-list').innerHTML = 
+          '<p>Error loading partner applications.</p>';
+      }
+    }
+    
+    // Function to update partner status (approve/reject)
+    async function updatePartnerStatus(userId, newStatus) {
+      if (!confirm(`Are you sure you want to ${newStatus} this partner application?`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch('/admin/partner-applications/' + userId, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          // Reload the applications list
+          loadPartnerApplications();
+          alert(`Partner application ${newStatus} successfully!`);
+        } else {
+          alert('Error: ' + (result.error || 'Failed to update partner status'));
+        }
+      } catch (error) {
+        console.error('Error updating partner status:', error);
+        alert('Error updating partner status');
       }
     }
   </script>
