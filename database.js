@@ -178,6 +178,8 @@ class Database {
           amount INTEGER NOT NULL,
           type TEXT NOT NULL,
           status TEXT DEFAULT 'pending',
+          error_message TEXT,
+          retry_count INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (appointment_id) REFERENCES appointments (id)

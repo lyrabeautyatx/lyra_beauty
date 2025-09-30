@@ -1,8 +1,23 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getDatabase } = require('../database');
+const { PaymentStatusService, PAYMENT_STATUSES } = require('../services/paymentStatus');
 
 const router = express.Router();
+const paymentStatusService = new PaymentStatusService();
+
+// Map Square payment statuses to internal payment statuses
+function mapSquareStatusToInternal(squareStatus) {
+  const statusMap = {
+    'PENDING': PAYMENT_STATUSES.PENDING,
+    'APPROVED': PAYMENT_STATUSES.PROCESSING,
+    'COMPLETED': PAYMENT_STATUSES.COMPLETED,
+    'CANCELED': PAYMENT_STATUSES.CANCELLED,
+    'FAILED': PAYMENT_STATUSES.FAILED
+  };
+  
+  return statusMap[squareStatus] || PAYMENT_STATUSES.PENDING;
+}
 
 // Middleware to capture raw body for signature verification on Square endpoint only
 router.use('/square', express.raw({ type: 'application/json' }));
@@ -139,23 +154,27 @@ async function handlePaymentCreated(payment) {
       await db.initializeTables();
     }
     
-    // Update payment record in database
-    await db.run(`
-      INSERT OR REPLACE INTO payments (
-        square_payment_id, appointment_id, amount, type, status, 
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
-      payment.id,
-      null, // Will be updated when we link to appointment
-      payment.amount_money?.amount || 0,
-      'square_payment',
-      payment.status,
-      new Date().toISOString(),
-      new Date().toISOString()
-    ]);
+    // Create or update payment record using status service
+    const existingPayment = await paymentStatusService.getPaymentBySquareId(payment.id);
+    
+    if (!existingPayment) {
+      // Create new payment record
+      await paymentStatusService.createPaymentRecord({
+        squarePaymentId: payment.id,
+        appointmentId: null, // Will be linked later
+        amount: payment.amount_money?.amount || 0,
+        type: 'square_payment',
+        status: mapSquareStatusToInternal(payment.status)
+      });
+    } else {
+      // Update existing payment status
+      await paymentStatusService.updatePaymentStatus(
+        payment.id, 
+        mapSquareStatusToInternal(payment.status)
+      );
+    }
 
-    console.log(`Payment ${payment.id} recorded in database`);
+    console.log(`Payment ${payment.id} recorded/updated in database`);
   } catch (error) {
     console.error('Error recording payment in database:', error);
     throw error;
@@ -176,28 +195,25 @@ async function handlePaymentUpdated(payment) {
       await db.initializeTables();
     }
     
-    // Update payment status in database
-    await db.run(`
-      UPDATE payments 
-      SET status = ?, updated_at = ?
-      WHERE square_payment_id = ?
-    `, [payment.status, new Date().toISOString(), payment.id]);
+    // Update payment status using status service
+    const internalStatus = mapSquareStatusToInternal(payment.status);
+    await paymentStatusService.updatePaymentStatus(payment.id, internalStatus);
 
-    // If payment is completed, update appointment status
-    if (payment.status === 'COMPLETED') {
-      await db.run(`
-        UPDATE appointments 
-        SET status = 'confirmed'
-        WHERE id = (
-          SELECT appointment_id FROM payments 
-          WHERE square_payment_id = ? AND appointment_id IS NOT NULL
-        )
-      `, [payment.id]);
-    }
-
-    console.log(`Payment ${payment.id} status updated to ${payment.status}`);
+    console.log(`Payment ${payment.id} status updated to ${payment.status} (internal: ${internalStatus})`);
   } catch (error) {
     console.error('Error updating payment status:', error);
+    
+    // Try to record the error in payment record
+    try {
+      await paymentStatusService.updatePaymentStatus(
+        payment.id, 
+        PAYMENT_STATUSES.FAILED, 
+        error.message
+      );
+    } catch (secondError) {
+      console.error('Failed to record payment error:', secondError);
+    }
+    
     throw error;
   }
 }
