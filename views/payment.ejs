@@ -16,14 +16,16 @@
       <p><strong>Date:</strong> <%= moment(booking.date).format('MMMM Do, YYYY') %></p>
       <p><strong>Time:</strong> <%= booking.time %></p>
       
-      <% if (booking.coupon) { %>
-        <div class="pricing-breakdown">
-          <p><strong>Original Price:</strong> $<%= (originalPrice / 100).toFixed(2) %></p>
-          <p class="coupon-discount"><strong>Coupon Discount (<%= booking.coupon.code %>):</strong> -$<%= (discountAmount / 100).toFixed(2) %> (10% off)</p>
-          <p class="final-price"><strong>Final Price:</strong> $<%= (finalPrice / 100).toFixed(2) %></p>
+      <% if (booking.coupon && booking.pricing) { %>
+        <div class="discount-summary">
+          <p><strong>Coupon Applied:</strong> <%= booking.coupon.code %> (by <%= booking.coupon.partner_name %>)</p>
+          <p><strong>Original Price:</strong> $<%= (booking.pricing.originalPrice / 100).toFixed(2) %></p>
+          <p><strong>Discount (<%= booking.pricing.discountPercentage %>%):</strong> -$<%= (booking.pricing.discountAmount / 100).toFixed(2) %></p>
+          <hr>
+          <p><strong>Final Price:</strong> $<%= (totalAmount / 100).toFixed(2) %></p>
         </div>
       <% } else { %>
-        <p><strong>Total Amount:</strong> $<%= (finalPrice / 100).toFixed(2) %></p>
+        <p><strong>Total Amount:</strong> $<%= (totalAmount / 100).toFixed(2) %></p>
       <% } %>
     </div>
     
@@ -39,7 +41,7 @@
       <div class="payment-choice">
         <label>
           <input type="radio" name="payment-type" value="full">
-          <strong>Full Payment</strong> - $<%= (finalPrice / 100).toFixed(2) %>
+          <strong>Full Payment</strong> - $<%= (totalAmount / 100).toFixed(2) %>
           <small>Pay the full amount now to complete your booking.</small>
         </label>
       </div>
@@ -68,7 +70,7 @@
   <script>
     const applicationId = "<%= applicationId %>";
     const locationId = "<%= locationId %>";
-    var finalPrice = Number('<%= finalPrice %>');
+    var totalAmount = Number('<%= totalAmount %>');
     var downPaymentAmount = Number('<%= downPaymentAmount %>');
     var remainingAmount = Number('<%= remainingAmount %>');
 
@@ -79,7 +81,7 @@
         if (this.value === 'down') {
           buttonText.textContent = `Pay $${(downPaymentAmount / 100).toFixed(2)} (Down Payment)`;
         } else {
-          buttonText.textContent = `Pay $${(finalPrice / 100).toFixed(2)} (Full Payment)`;
+          buttonText.textContent = `Pay $${(totalAmount / 100).toFixed(2)} (Full Payment)`;
         }
       });
     });

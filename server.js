@@ -56,16 +56,12 @@ const {
   processFullPayment,
   createRemainingPaymentInvoice, 
   calculateDownPayment, 
-  calculateRemainingPayment,
-  calculatePricingWithDiscount
+  calculateRemainingPayment 
 } = require('./services/payments');
+const { PaymentStatusService, PAYMENT_STATUSES, PAYMENT_TYPES } = require('./services/paymentStatus');
 
 // Import coupon service
-const { 
-  validateCoupon, 
-  recordCouponUsage, 
-  createPartnerCommission 
-} = require('./services/coupon');
+const couponService = require('./services/coupon');
 
 // Import authentication components
 const authRoutes = require('./auth/routes/auth');
@@ -176,20 +172,7 @@ async function loadAppointments() {
 
 async function saveAppointment(appointmentData) {
   try {
-    const { 
-      username, 
-      date, 
-      time, 
-      service, 
-      serviceInfo, 
-      originalPrice, 
-      finalPrice, 
-      couponId, 
-      downPaymentAmount, 
-      status, 
-      paymentId, 
-      paidAmount 
-    } = appointmentData;
+    const { username, date, time, service, serviceInfo, status, paymentId, paidAmount, coupon, pricing } = appointmentData;
     
     // Get user ID
     const user = await db.get('SELECT id FROM users WHERE username = ?', [username]);
@@ -203,34 +186,15 @@ async function saveAppointment(appointmentData) {
       throw new Error(`Service not found: ${service}`);
     }
     
+    // Prepare coupon and pricing data
+    const couponId = coupon ? coupon.id : null;
+    const finalPrice = pricing ? pricing.finalPrice : paidAmount;
+    const discountAmount = pricing ? pricing.discountAmount : 0;
+    
     const result = await db.run(`
-      INSERT INTO appointments (
-        user_id, 
-        service_id, 
-        coupon_id, 
-        date, 
-        time, 
-        original_price, 
-        final_price, 
-        down_payment_amount, 
-        status, 
-        payment_id, 
-        paid_amount
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      user.id, 
-      serviceRecord.id, 
-      couponId, 
-      date, 
-      time, 
-      originalPrice || finalPrice, 
-      finalPrice, 
-      downPaymentAmount || 0, 
-      status, 
-      paymentId, 
-      paidAmount
-    ]);
+      INSERT INTO appointments (user_id, service_id, date, time, status, payment_id, paid_amount, coupon_id, final_price, discount_amount)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [user.id, serviceRecord.id, date, time, status, paymentId, paidAmount, couponId, finalPrice, discountAmount]);
     
     return result.lastID;
   } catch (error) {
@@ -293,6 +257,10 @@ app.use('/webhooks', webhookRoutes);
 // Service management routes
 const serviceRoutes = require('./routes/services');
 app.use('/api/services', serviceRoutes);
+
+// Coupon routes
+const couponRoutes = require('./routes/coupons');
+app.use('/api', couponRoutes);
 
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
@@ -442,7 +410,7 @@ app.get('/book', requireAuth, blockPartnerBooking, async (req, res) => {
 });
 
 app.post('/book', requireAuth, blockPartnerBooking, async (req, res) => {
-  const { date, time, service, coupon } = req.body;
+  const { date, time, service, couponCode } = req.body;
   
   if (!(await isSlotAvailable(date, time))) {
     const timeSlots = generateTimeSlots(date);
@@ -467,38 +435,49 @@ app.post('/book', requireAuth, blockPartnerBooking, async (req, res) => {
   }
   
   const servicePricing = await getServicePricing();
+  
+  // Validate coupon if provided
   let couponData = null;
   let couponError = null;
   
-  // Validate coupon if provided
-  if (coupon && coupon.trim()) {
-    const couponValidation = await validateCoupon(coupon.trim(), req.session.user.id);
+  if (couponCode && couponCode.trim()) {
+    const couponValidation = await couponService.validateCoupon(couponCode.trim().toLowerCase(), req.session.user.id);
+    
     if (couponValidation.valid) {
       couponData = couponValidation.coupon;
     } else {
       couponError = couponValidation.error;
+      
+      // Return to booking form with error
+      const timeSlots = generateTimeSlots(date);
+      const availableSlots = [];
+      
+      for (const slot of timeSlots) {
+        if (await isSlotAvailable(date, slot)) {
+          availableSlots.push(slot);
+        }
+      }
+      
+      return res.render('book', { 
+        user: req.session.user, 
+        selectedDate: date,
+        availableSlots,
+        servicePricing,
+        moment,
+        error: couponError
+      });
     }
   }
   
-  // If there's a coupon error, show it and don't proceed
-  if (couponError) {
-    const timeSlots = generateTimeSlots(date);
-    const availableSlots = [];
-    
-    for (const slot of timeSlots) {
-      if (await isSlotAvailable(date, slot)) {
-        availableSlots.push(slot);
-      }
-    }
-    
-    return res.render('book', { 
-      user: req.session.user, 
-      selectedDate: date,
-      availableSlots,
-      servicePricing,
-      moment,
-      error: couponError
-    });
+  // Calculate pricing with discount if applicable
+  const originalPrice = servicePricing[service].price;
+  let finalPrice = originalPrice;
+  let discountAmount = 0;
+  
+  if (couponData) {
+    const discountCalculation = couponService.calculateDiscount(originalPrice, couponData.discount_percentage);
+    finalPrice = discountCalculation.finalPrice;
+    discountAmount = discountCalculation.discountAmount;
   }
   
   // Store booking details in session for payment
@@ -507,7 +486,13 @@ app.post('/book', requireAuth, blockPartnerBooking, async (req, res) => {
     time,
     service,
     serviceInfo: servicePricing[service],
-    coupon: couponData
+    coupon: couponData,
+    pricing: {
+      originalPrice,
+      finalPrice,
+      discountAmount,
+      discountPercentage: couponData ? couponData.discount_percentage : 0
+    }
   };
   
   res.redirect('/payment');
@@ -519,23 +504,20 @@ app.get('/payment', requireAuth, blockPartnerBooking, (req, res) => {
   }
   
   const booking = req.session.pendingBooking;
-  const originalPrice = booking.serviceInfo.price;
   
-  // Calculate pricing with coupon discount if applicable
-  const pricingInfo = calculatePricingWithDiscount(originalPrice, booking.coupon);
+  // Use final price if coupon is applied, otherwise use original price
+  const totalAmount = booking.pricing ? booking.pricing.finalPrice : booking.serviceInfo.price;
+  const downPaymentAmount = calculateDownPayment(totalAmount);
+  const remainingAmount = calculateRemainingPayment(totalAmount);
   
   res.render('payment', {
     user: req.session.user,
     booking,
-    originalPrice: pricingInfo.originalPrice,
-    finalPrice: pricingInfo.finalPrice,
-    discountAmount: pricingInfo.discountAmount,
-    totalAmount: pricingInfo.finalPrice, // For compatibility
-    downPaymentAmount: pricingInfo.downPaymentAmount,
-    remainingAmount: pricingInfo.remainingAmount,
-    pricingInfo,
-    applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX',
-    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID',
+    totalAmount,
+    downPaymentAmount,
+    remainingAmount,
+    applicationId: process.env.SQUARE_APPLICATION_ID || 'sandbox-sq0idb-XXXXXXXXXX', // Replace with your Square Application ID
+    locationId: process.env.SQUARE_LOCATION_ID || 'SANDBOX_LOCATION_ID', // Replace with your Square Location ID
     moment
   });
 });
@@ -547,55 +529,73 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
   
   const { sourceId, cardDetails, paymentType = 'down' } = req.body;
   const booking = req.session.pendingBooking;
+  const paymentStatusService = new PaymentStatusService();
   
   try {
-    const originalPrice = booking.serviceInfo.price;
-    const pricingInfo = calculatePricingWithDiscount(originalPrice, booking.coupon);
-    
     let paymentResult;
     
+    // Use final price if coupon is applied, otherwise use original price
+    const totalAmount = booking.pricing ? booking.pricing.finalPrice : booking.serviceInfo.price;
+    
     if (paymentType === 'down') {
-      // Process down payment (20% of final price)
-      paymentResult = await processDownPayment(booking, sourceId, pricingInfo.finalPrice);
+      // Process down payment (20%)
+      paymentResult = await processDownPayment(booking, sourceId, totalAmount);
       if (paymentResult.success) {
-        // Save the appointment to database with pricing info
+        // Save the appointment to database (down payment)
         const appointmentId = await saveAppointment({
           username: req.session.user.username,
           date: booking.date,
           time: booking.time,
           service: booking.service,
           serviceInfo: booking.serviceInfo,
-          originalPrice: pricingInfo.originalPrice,
-          finalPrice: pricingInfo.finalPrice,
-          couponId: booking.coupon ? booking.coupon.id : null,
-          downPaymentAmount: pricingInfo.downPaymentAmount,
           status: 'confirmed',
           paymentId: paymentResult.paymentId,
-          paidAmount: paymentResult.amount
+          paidAmount: paymentResult.amount,
+          coupon: booking.coupon,
+          pricing: booking.pricing
         });
         
-        // Record coupon usage if coupon was used
-        if (booking.coupon) {
-          await recordCouponUsage(booking.coupon.id, req.session.user.id, appointmentId);
-          
-          // Create partner commission record
-          await createPartnerCommission(
-            booking.coupon.partnerId, 
-            appointmentId, 
-            pricingInfo.partnerCommission
-          );
+        // Store payment record using status service (from Issue #50)
+        const paymentId = await paymentStatusService.createPaymentRecord({
+          squarePaymentId: paymentResult.paymentId,
+          appointmentId: appointmentId,
+          amount: paymentResult.amount,
+          type: PAYMENT_TYPES.DOWN_PAYMENT,
+          status: paymentResult.status === 'COMPLETED' ? PAYMENT_STATUSES.COMPLETED : PAYMENT_STATUSES.PROCESSING
+        });
+        
+        // Handle coupon usage if coupon was applied (critical business logic)
+        if (booking.coupon && booking.pricing) {
+          try {
+            // Record coupon usage
+            const couponUsageSuccess = await couponService.recordCouponUsage(
+              booking.coupon.id,
+              req.session.user.id,
+              appointmentId,
+              booking.pricing.discountAmount
+            );
+            
+            if (couponUsageSuccess) {
+              // Record partner commission (based on original price, not discounted price)
+              await couponService.recordPartnerCommission(
+                booking.coupon.partner_id,
+                appointmentId,
+                booking.coupon.id,
+                booking.pricing.originalPrice
+              );
+              console.log('Coupon usage and partner commission recorded successfully');
+            } else {
+              console.error('Failed to record coupon usage');
+            }
+          } catch (couponError) {
+            console.error('Error handling coupon usage:', couponError);
+            // Don't fail the payment, just log the error
+          }
         }
-        
-        // Store payment record
-        await db.run(
-          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [appointmentId, paymentResult.paymentId, paymentResult.amount, 'down_payment', paymentResult.status]
-        );
-        
         // Create invoice for remaining payment
         const invoiceResult = await createRemainingPaymentInvoice(
           booking, 
-          pricingInfo.remainingAmount, 
+          paymentResult.remainingAmount, 
           paymentResult.paymentId
         );
         
@@ -607,72 +607,76 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
           appointmentId,
           paymentId: paymentResult.paymentId,
           paidAmount: paymentResult.amount,
-          remainingAmount: pricingInfo.remainingAmount,
-          originalPrice: pricingInfo.originalPrice,
-          finalPrice: pricingInfo.finalPrice,
-          discountAmount: pricingInfo.discountAmount,
-          couponUsed: booking.coupon ? booking.coupon.code : null,
-          invoiceId: invoiceResult.success ? invoiceResult.invoiceId : null
+          remainingAmount: paymentResult.remainingAmount,
+          invoiceId: invoiceResult.success ? invoiceResult.invoiceId : null,
+          couponApplied: booking.coupon ? true : false,
+          discountAmount: booking.pricing ? booking.pricing.discountAmount : 0
         });
       } else {
+        // Record failed payment attempt
+        try {
+          await paymentStatusService.createPaymentRecord({
+            squarePaymentId: `failed_${Date.now()}`, // Temporary ID for failed payments
+            appointmentId: null,
+            amount: paymentResult.amount || calculateDownPayment(totalAmount),
+            type: PAYMENT_TYPES.DOWN_PAYMENT,
+            status: PAYMENT_STATUSES.FAILED
+          });
+        } catch (recordError) {
+          console.error('Failed to record failed payment:', recordError);
+        }
+        
         res.status(400).json({ 
           error: paymentResult.error || 'Down payment was not completed',
           code: paymentResult.code 
         });
       }
     } else if (paymentType === 'full') {
-      // Process full payment (100% of final price)
-      paymentResult = await processFullPayment(booking, sourceId, pricingInfo.finalPrice);
+      // Process full payment
+      paymentResult = await processFullPayment(booking, sourceId, totalAmount);
       if (paymentResult.success) {
-        // Save the appointment to database with pricing info
+        // Save the appointment to database (full payment)
         const appointmentId = await saveAppointment({
           username: req.session.user.username,
           date: booking.date,
           time: booking.time,
           service: booking.service,
           serviceInfo: booking.serviceInfo,
-          originalPrice: pricingInfo.originalPrice,
-          finalPrice: pricingInfo.finalPrice,
-          couponId: booking.coupon ? booking.coupon.id : null,
-          downPaymentAmount: pricingInfo.finalPrice, // Full payment
           status: 'confirmed',
           paymentId: paymentResult.paymentId,
-          paidAmount: pricingInfo.finalPrice
+          paidAmount: totalAmount
         });
-        
-        // Record coupon usage if coupon was used
-        if (booking.coupon) {
-          await recordCouponUsage(booking.coupon.id, req.session.user.id, appointmentId);
-          
-          // Create partner commission record
-          await createPartnerCommission(
-            booking.coupon.partnerId, 
-            appointmentId, 
-            pricingInfo.partnerCommission
-          );
-        }
-        
-        // Store payment record
-        await db.run(
-          `INSERT INTO payments (appointment_id, square_payment_id, amount, type, status, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-          [appointmentId, paymentResult.paymentId, pricingInfo.finalPrice, 'full_payment', paymentResult.status]
-        );
-        
+        // Store payment record using status service
+        const paymentId = await paymentStatusService.createPaymentRecord({
+          squarePaymentId: paymentResult.paymentId,
+          appointmentId: appointmentId,
+          amount: totalAmount,
+          type: PAYMENT_TYPES.FULL_PAYMENT,
+          status: paymentResult.status === 'COMPLETED' ? PAYMENT_STATUSES.COMPLETED : PAYMENT_STATUSES.PROCESSING
+        });
         // Clear pending booking
         delete req.session.pendingBooking;
-        
         res.json({ 
           success: true, 
           appointmentId,
           paymentId: paymentResult.paymentId,
-          paidAmount: pricingInfo.finalPrice,
-          remainingAmount: 0,
-          originalPrice: pricingInfo.originalPrice,
-          finalPrice: pricingInfo.finalPrice,
-          discountAmount: pricingInfo.discountAmount,
-          couponUsed: booking.coupon ? booking.coupon.code : null
+          paidAmount: totalAmount,
+          remainingAmount: 0
         });
       } else {
+        // Record failed payment attempt
+        try {
+          await paymentStatusService.createPaymentRecord({
+            squarePaymentId: `failed_${Date.now()}`, // Temporary ID for failed payments
+            appointmentId: null,
+            amount: totalAmount,
+            type: PAYMENT_TYPES.FULL_PAYMENT,
+            status: PAYMENT_STATUSES.FAILED
+          });
+        } catch (recordError) {
+          console.error('Failed to record failed payment:', recordError);
+        }
+        
         res.status(400).json({ 
           error: paymentResult.error || 'Payment was not completed',
           code: paymentResult.code 
@@ -683,7 +687,24 @@ app.post('/process-payment', requireAuth, blockPartnerBooking, async (req, res) 
     }
   } catch (error) {
     console.error('Payment error:', error);
-    res.status(500).json({ error: 'Payment processing failed' });
+    
+    // Try to record the error
+    try {
+      await paymentStatusService.createPaymentRecord({
+        squarePaymentId: `error_${Date.now()}`,
+        appointmentId: null,
+        amount: 0,
+        type: paymentType === 'down' ? PAYMENT_TYPES.DOWN_PAYMENT : PAYMENT_TYPES.FULL_PAYMENT,
+        status: PAYMENT_STATUSES.FAILED
+      });
+    } catch (recordError) {
+      console.error('Failed to record payment error:', recordError);
+    }
+    
+    res.status(500).json({ 
+      error: 'Payment processing failed',
+      message: error.message 
+    });
   }
 });
 
@@ -691,18 +712,53 @@ app.get('/my-appointments', requireAuth, async (req, res) => {
   const appointments = await loadAppointments();
   const userAppointments = appointments.filter(apt => apt.username === req.session.user.username);
   
+  // Enhanced appointment data with payment status
+  const paymentStatusService = new PaymentStatusService();
+  const enhancedAppointments = await Promise.all(
+    userAppointments.map(async (appointment) => {
+      try {
+        const paymentSummary = await paymentStatusService.getPaymentSummary(appointment.id);
+        return {
+          ...appointment,
+          paymentSummary
+        };
+      } catch (error) {
+        console.error(`Error getting payment summary for appointment ${appointment.id}:`, error);
+        return appointment;
+      }
+    })
+  );
+  
   res.render('my-appointments', { 
     user: req.session.user, 
-    appointments: userAppointments,
+    appointments: enhancedAppointments,
     moment
   });
 });
 
 app.get('/admin', requireAuth, requireAdmin, async (req, res) => {
   const appointments = await loadAppointments();
+  
+  // Enhanced appointment data with payment status for admin view
+  const paymentStatusService = new PaymentStatusService();
+  const enhancedAppointments = await Promise.all(
+    appointments.map(async (appointment) => {
+      try {
+        const paymentSummary = await paymentStatusService.getPaymentSummary(appointment.id);
+        return {
+          ...appointment,
+          paymentSummary
+        };
+      } catch (error) {
+        console.error(`Error getting payment summary for appointment ${appointment.id}:`, error);
+        return appointment;
+      }
+    })
+  );
+  
   res.render('admin', { 
     user: req.session.user, 
-    appointments,
+    appointments: enhancedAppointments,
     moment
   });
 });
