@@ -249,6 +249,10 @@ app.use('/webhooks', webhookRoutes);
 const serviceRoutes = require('./routes/services');
 app.use('/api/services', serviceRoutes);
 
+// Coupon routes
+const couponRoutes = require('./routes/coupons');
+app.use('/api', couponRoutes);
+
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();

@@ -184,6 +184,51 @@ class Database {
         )
       `);
 
+      // Coupons table for partner referral system
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS coupons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          partner_id INTEGER NOT NULL,
+          code VARCHAR(50) NOT NULL UNIQUE,
+          discount_percentage INTEGER NOT NULL CHECK (discount_percentage > 0 AND discount_percentage <= 100),
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (partner_id) REFERENCES users (id) ON DELETE CASCADE
+        )
+      `);
+
+      // Coupon usage tracking table - ensures one coupon per customer lifetime
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS coupon_usage (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          coupon_id INTEGER NOT NULL,
+          customer_id INTEGER NOT NULL,
+          appointment_id INTEGER,
+          used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (coupon_id) REFERENCES coupons (id) ON DELETE CASCADE,
+          FOREIGN KEY (customer_id) REFERENCES users (id) ON DELETE CASCADE,
+          FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE SET NULL,
+          UNIQUE(coupon_id, customer_id)
+        )
+      `);
+
+      // Partner commissions table for tracking earnings
+      await this.run(`
+        CREATE TABLE IF NOT EXISTS partner_commissions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          partner_id INTEGER NOT NULL,
+          appointment_id INTEGER NOT NULL,
+          original_price DECIMAL(10,2) NOT NULL,
+          commission_amount DECIMAL(10,2) NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (partner_id) REFERENCES users (id) ON DELETE CASCADE,
+          FOREIGN KEY (appointment_id) REFERENCES appointments (id) ON DELETE CASCADE
+        )
+      `);
+
       // Insert default services if they don't exist
       const serviceCount = await this.get('SELECT COUNT(*) as count FROM services');
       if (serviceCount.count === 0) {

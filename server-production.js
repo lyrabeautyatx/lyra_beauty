@@ -86,6 +86,10 @@ app.use(passport.session());
 // OAuth routes
 app.use('/auth', authRoutes);
 
+// Coupon routes
+const couponRoutes = require('./routes/coupons');
+app.use('/api', couponRoutes);
+
 // Legacy authentication middleware (kept for backward compatibility)
 function legacyRequireAuth(req, res, next) {
   if (req.session.user) return next();
